@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2, Plane, DollarSign, Percent, Calculator, Save, FileDown, LayoutDashboard, ExternalLink, Filter, RefreshCw } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2, Plane, DollarSign, Percent, Calculator, Save, FileDown, LayoutDashboard, ExternalLink, Filter, RefreshCw, Trash2, Edit, XCircle } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 
-// --- Firebase Configuration (FOR VERCEL DEPLOYMENT) ---
+// --- Firebase Configuration (Corrected for Vercel Deployment) ---
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
@@ -194,6 +194,7 @@ const App = () => {
     const [reportFilter, setReportFilter] = useState('All');
     const [exchangeRates, setExchangeRates] = useState(fallbackExchangeRates);
     const [ratesLoading, setRatesLoading] = useState(true);
+    const [editingRequestId, setEditingRequestId] = useState(null);
 
     // Form State
     const [submittedBy, setSubmittedBy] = useState('');
@@ -201,6 +202,8 @@ const App = () => {
     const [purpose, setPurpose] = useState('');
     const [country, setCountry] = useState('');
     const [city, setCity] = useState('');
+    const [departureLocation, setDepartureLocation] = useState('Manila'); // NEW
+    const [fareClass, setFareClass] = useState('Business'); // NEW
     const [targetAudience, setTargetAudience] = useState('');
     const [targetDate, setTargetDate] = useState('');
     const [travelDays, setTravelDays] = useState(1);
@@ -227,24 +230,23 @@ const App = () => {
         setTimeout(() => setNotification({ message: '', type: '' }), 4000);
     };
 
-   const fetchExchangeRates = useCallback(async () => {
-    setRatesLoading(true);
-    try {
-        const response = await fetch('/api/getExchangeRates');
-        const data = await response.json();
-        if (data.error) {
-            throw new Error(data.message);
+    const fetchExchangeRates = useCallback(async () => {
+        setRatesLoading(true);
+        showNotification("Fetching live exchange rates...", "success");
+        try {
+            const response = await fetch('/api/getExchangeRates');
+            if (!response.ok) throw new Error('Failed to fetch rates from serverless function');
+            const data = await response.json();
+            setExchangeRates(prev => ({ ...prev, ...data }));
+            showNotification("Exchange rates updated.", "success");
+        } catch (error) {
+            console.error("Failed to fetch dynamic exchange rates:", error);
+            setExchangeRates(fallbackExchangeRates);
+            showNotification("Could not fetch live rates. Using fallback values.", "error");
+        } finally {
+            setRatesLoading(false);
         }
-        setExchangeRates(prev => ({ ...prev, ...data }));
-        showNotification("Exchange rates updated.", "success");
-    } catch (error) {
-        console.error("Failed to fetch dynamic exchange rates:", error);
-        setExchangeRates(fallbackExchangeRates);
-        showNotification(`Could not fetch live rates: ${error.message}. Using defaults.`, "error");
-    } finally {
-        setRatesLoading(false);
-    }
-}, [showNotification]);
+    }, []);
 
     // --- Firebase & Initial Data Load Effect ---
     useEffect(() => {
@@ -295,82 +297,92 @@ const App = () => {
     // --- Form and Calculation Logic ---
     useEffect(() => {
         if (country && hotelData[country]) {
-            setCities(Object.keys(hotelData[country])); setCity(''); clearResults();
+            setCities(Object.keys(hotelData[country])); 
+            if(!editingRequestId) { // Don't clear city if we are editing
+                setCity(''); 
+            }
+            clearResults();
         } else {
             setCities([]); setCity('');
         }
-    }, [country]);
+    }, [country, editingRequestId]);
     
     const clearResults = () => {
         setIsCalculated(false); setAirfare(null); setHotelFare(null); setOriginalHotelInfo(null); setDma(null); setTotalCost(null); setContingency(null); setOverallBudget(null); setAirfareSourceUrl('');
     };
 
-    const handleClearForm = () => {
-        setDivision('CTLA'); setPurpose(''); setCountry(''); setCity(''); setTargetAudience(''); setTargetDate(''); setTravelDays(1); setCities([]); clearResults();
+    const resetForm = () => {
+        setSubmittedBy(user?.displayName || user?.email || 'Authenticated User');
+        setDivision('CTLA'); setPurpose(''); setCountry(''); setCity(''); setDepartureLocation('Manila'); setFareClass('Business'); setTargetAudience(''); setTargetDate(''); setTravelDays(1); setCities([]); clearResults();
+        setEditingRequestId(null);
     };
 
     const calculateBudget = useCallback(async () => {
-    if (!country || !city || !travelDays || !targetDate || travelDays <= 0) {
-        showNotification("Please fill all fields, including a valid Target Date and Travel Days.", 'error'); return;
-    }
-    setIsCalculated(true); setAirfareLoading(true); setAirfareSourceUrl('');
-    try {
-        const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
-        setOriginalHotelInfo(hotelInfo);
-        const conversionRate = exchangeRates[hotelInfo.currency] || 1;
-        const convertedHotelFare = hotelInfo.rate * conversionRate;
-        setHotelFare(convertedHotelFare);
-
-        const selectedDma = dmaData[country] || 0; setDma(selectedDma);
-
-        const capital = countryToCapital[country]
-        const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : capital;
-
-        let fetchedAirfare = 1500;
-        if (destinationCityForFlight) {
-            try {
-                const response = await fetch(`/api/getAirfare?destination=${encodeURIComponent(destinationCityForFlight)}&targetDate=${targetDate}&travelDays=${travelDays}`);
-                const data = await response.json();
-
-                if (data.error) {
-                    throw new Error(data.message);
-                }
-
-                fetchedAirfare = data.price;
-                const url = `https://www.google.com/travel/flights?q=Flights%20from%20Manila%20to%20${encodeURIComponent(destinationCityForFlight)}`;
-                setAirfareSourceUrl(url);
-
-            } catch (apiError) {
-                console.error("Airfare API Error:", apiError);
-                showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
-                fetchedAirfare = 1500; // Ensure fallback is set
-            }
+        if (!country || !city || !travelDays || !targetDate || travelDays <= 0 || !departureLocation) {
+            showNotification("Please fill all fields, including Departure, Destination, Target Date and Travel Days.", 'error'); return;
         }
-        setAirfare(fetchedAirfare);
-        const total = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
-        const cont = total * 0.05;
-        setTotalCost(total); setContingency(cont); setOverallBudget(total + cont);
-    } catch (error) {
-        console.error("Calculation Error:", error);
-        showNotification("An error occurred during calculation.", 'error');
-    } finally {
-        setAirfareLoading(false);
-    }
-}, [country, city, travelDays, targetDate, exchangeRates, showNotification]);
+        setIsCalculated(true); setAirfareLoading(true); setAirfareSourceUrl('');
+        try {
+            const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
+            setOriginalHotelInfo(hotelInfo);
+            const conversionRate = exchangeRates[hotelInfo.currency] || 1;
+            const convertedHotelFare = hotelInfo.rate * conversionRate;
+            setHotelFare(convertedHotelFare);
+
+            const selectedDma = dmaData[country] || 0; setDma(selectedDma);
+            
+            const capital = countryToCapital[country]
+            const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : capital;
+            
+            let fetchedAirfare = 1500;
+            if (destinationCityForFlight) {
+                try {
+                    const response = await fetch(`/api/getAirfare?destination=${encodeURIComponent(destinationCityForFlight)}&departure=${encodeURIComponent(departureLocation)}&targetDate=${targetDate}&travelDays=${travelDays}&fareClass=${fareClass}`);
+                    const data = await response.json();
+                    
+                    if (data.error) throw new Error(data.message);
+                    fetchedAirfare = data.price;
+                    const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureLocation}%20to%20${encodeURIComponent(destinationCityForFlight)}`;
+                    setAirfareSourceUrl(url);
+
+                } catch (apiError) {
+                    console.error("Airfare API Error:", apiError);
+                    showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
+                    fetchedAirfare = 1500;
+                }
+            }
+            setAirfare(fetchedAirfare);
+            const total = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
+            const cont = total * 0.05;
+            setTotalCost(total); setContingency(cont); setOverallBudget(total + cont);
+        } catch (error) {
+            console.error("Calculation Error:", error);
+            showNotification("An error occurred during calculation.", 'error');
+        } finally {
+            setAirfareLoading(false);
+        }
+    }, [country, city, travelDays, targetDate, exchangeRates, departureLocation, fareClass, showNotification]);
 
     const handleSaveRequest = async () => {
         if (!isCalculated || overallBudget === null) { showNotification("Please calculate a budget before saving.", "error"); return; }
         if (!db || !userId) { showNotification("Database not connected. Cannot save.", "error"); return; }
         setIsSaving(true);
         const requestData = {
-            submittedBy, division, purpose, country, city, targetAudience, targetDate, travelDays,
+            submittedBy, division, purpose, country, city, departureLocation, fareClass, targetAudience, targetDate, travelDays,
             airfare, hotelFare, dma, totalCost, contingency, overallBudget, airfareSourceUrl,
             submissionTimestamp: Timestamp.now()
         };
         try {
             const requestsCollectionPath = `artifacts/${appId}/users/${userId}/travelRequests`;
-            await addDoc(collection(db, requestsCollectionPath), requestData);
-            showNotification("Budget request saved successfully!", "success");
+            if (editingRequestId) {
+                const docRef = doc(db, requestsCollectionPath, editingRequestId);
+                await updateDoc(docRef, requestData);
+                showNotification("Request updated successfully!", "success");
+            } else {
+                await addDoc(collection(db, requestsCollectionPath), requestData);
+                showNotification("Budget request saved successfully!", "success");
+            }
+            resetForm();
         } catch (error) {
             console.error("Error saving to Firestore:", error);
             showNotification("Failed to save request.", "error");
@@ -378,34 +390,47 @@ const App = () => {
             setIsSaving(false);
         }
     };
-    
-    const downloadCSV = () => {
-        const dataToExport = reportFilter === 'All'
-            ? savedRequests
-            : savedRequests.filter(req => req.division === reportFilter);
 
-        if (dataToExport.length === 0) {
-            showNotification(`No data to download for ${reportFilter} division.`, "error"); return;
+    const handleDeleteRequest = async (id) => {
+        if (!db || !userId) { showNotification("Database not connected. Cannot delete.", "error"); return; }
+        if (window.confirm("Are you sure you want to delete this entry?")) {
+            try {
+                const requestsCollectionPath = `artifacts/${appId}/users/${userId}/travelRequests`;
+                const docRef = doc(db, requestsCollectionPath, id);
+                await deleteDoc(docRef);
+                showNotification("Request deleted successfully.", "success");
+            } catch (error) {
+                 console.error("Error deleting document: ", error);
+                 showNotification("Failed to delete request.", "error");
+            }
         }
+    };
+    
+    const handleEditRequest = (request) => {
+        setSubmittedBy(request.submittedBy);
+        setDivision(request.division);
+        setPurpose(request.purpose);
+        setCountry(request.country);
+        // This relies on the useEffect for country to populate cities
+        setCity(request.city);
+        setDepartureLocation(request.departureLocation || 'Manila');
+        setFareClass(request.fareClass || 'Business');
+        setTargetAudience(request.targetAudience);
+        setTargetDate(request.targetDate);
+        setTravelDays(request.travelDays);
+        setEditingRequestId(request.id);
+        setView('calculator');
+        showNotification("Now editing a saved request. Click Update Request when finished.", "success");
+    };
+
+    const downloadCSV = () => {
+        const dataToExport = reportFilter === 'All' ? savedRequests : savedRequests.filter(req => req.division === reportFilter);
+        if (dataToExport.length === 0) { showNotification(`No data to download for ${reportFilter} division.`, "error"); return; }
         
-        const headers = ['Submitted By', 'Division', 'Submission Date', 'Target Date', 'Destination', 'Purpose', 'Airfare ($)', 'Total Hotel ($)', 'Total DMA ($)', 'Contingency ($)', 'Overall Budget ($)'];
-        const rows = dataToExport.map(req => {
-            const totalHotel = (req.hotelFare || 0) * (req.travelDays || 0);
-            const totalDma = (req.dma || 0) * (req.travelDays || 0);
-            return [
-                `"${req.submittedBy}"`,
-                `"${req.division}"`,
-                `"${req.submissionTimestamp.toDate().toLocaleDateString()}"`,
-                `"${req.targetDate}"`,
-                `"${req.city}, ${req.country}"`,
-                `"${req.purpose.replace(/"/g, '""')}"`,
-                req.airfare?.toFixed(2) || '0.00',
-                totalHotel.toFixed(2),
-                totalDma.toFixed(2),
-                req.contingency?.toFixed(2) || '0.00',
-                req.overallBudget?.toFixed(2) || '0.00'
-            ].join(',');
-        });
+        const headers = ['Submitted By', 'Division', 'Departure', 'Destination', 'Fare Class', 'Target Date', 'Travel Days', 'Overall Budget ($)'];
+        const rows = dataToExport.map(req => [
+                `"${req.submittedBy}"`, `"${req.division}"`, `"${req.departureLocation}"`, `"${req.city}, ${req.country}"`, `"${req.fareClass}"`, `"${req.targetDate}"`, req.travelDays, req.overallBudget?.toFixed(2) || '0.00'
+            ].join(','));
         const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
@@ -421,15 +446,23 @@ const App = () => {
     const renderCalculatorView = () => (
         <main className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white p-6 rounded-2xl shadow-lg">
-                <h2 className="text-2xl font-semibold mb-6 border-b pb-3 text-slate-800">1. Enter Travel Details</h2>
+                 <div className="flex justify-between items-center mb-6 border-b pb-3">
+                    <h2 className="text-2xl font-semibold text-slate-800">1. Enter Travel Details</h2>
+                    {editingRequestId && <button onClick={resetForm} className="text-sm text-red-500 hover:text-red-700 font-semibold flex items-center"><XCircle className="w-4 h-4 mr-1" />Cancel Edit</button>}
+                 </div>
                 <form className="space-y-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="submittedBy" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Submitted by/User</label><input type="text" id="submittedBy" value={submittedBy} onChange={e => setSubmittedBy(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="division" className="font-medium text-sm text-slate-700 flex items-center"><Building2 className="w-4 h-4 mr-2"/>Division</label><select id="division" value={division} onChange={e => setDivision(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>CTLA</option> <option>CTFA</option> <option>CTOC</option> <option>CTAC</option></select></div></div><div className="space-y-2"><label htmlFor="purpose" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Purpose/Event Description</label><textarea id="purpose" value={purpose} onChange={e => setPurpose(e.target.value)} rows="3" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"></textarea></div><div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="country" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Country/Destination</label><select id="country" value={country} onChange={e => setCountry(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option value="">Select a country...</option>{Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div><div className="space-y-2"><label htmlFor="city" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>City</label><select id="city" value={city} onChange={e => setCity(e.target.value)} disabled={!country} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white"><option value="">Select a city...</option>{cities.map(c => <option key={c} value={c}>{c}</option>)}</select></div></div><div className="space-y-2"><label htmlFor="targetAudience" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Target Audience</label><input type="text" id="targetAudience" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="targetDate" className="font-medium text-sm text-slate-700 flex items-center"><CalendarIcon className="w-4 h-4 mr-2"/>Target Date</label><input type="date" id="targetDate" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="travelDays" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Expected Travel Days</label><input type="number" id="travelDays" value={travelDays} min="1" onChange={e => setTravelDays(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="submittedBy" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Submitted by/User</label><input type="text" id="submittedBy" value={submittedBy} onChange={e => setSubmittedBy(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="division" className="font-medium text-sm text-slate-700 flex items-center"><Building2 className="w-4 h-4 mr-2"/>Division</label><select id="division" value={division} onChange={e => setDivision(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>CTLA</option> <option>CTFA</option> <option>CTOC</option> <option>CTAC</option></select></div></div>
+                    <div className="space-y-2"><label htmlFor="purpose" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Purpose/Event Description</label><textarea id="purpose" value={purpose} onChange={e => setPurpose(e.target.value)} rows="3" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"></textarea></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="departureLocation" className="font-medium text-sm text-slate-700 flex items-center"><Plane className="w-4 h-4 mr-2"/>Departure Location</label><input type="text" id="departureLocation" value={departureLocation} onChange={e => setDepartureLocation(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="fareClass" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Fare Class</label><select id="fareClass" value={fareClass} onChange={e => setFareClass(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>Business</option><option>Economy</option></select></div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="country" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Destination Country</label><select id="country" value={country} onChange={e => setCountry(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option value="">Select a country...</option>{Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div><div className="space-y-2"><label htmlFor="city" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Destination City</label><select id="city" value={city} onChange={e => setCity(e.target.value)} disabled={!country} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white"><option value="">Select a city...</option>{cities.map(c => <option key={c} value={c}>{c}</option>)}</select></div></div>
+                    <div className="space-y-2"><label htmlFor="targetAudience" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Target Audience</label><input type="text" id="targetAudience" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="targetDate" className="font-medium text-sm text-slate-700 flex items-center"><CalendarIcon className="w-4 h-4 mr-2"/>Target Date</label><input type="date" id="targetDate" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="travelDays" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Expected Travel Days</label><input type="number" id="travelDays" value={travelDays} min="1" onChange={e => setTravelDays(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div></div>
                     <div className="flex space-x-2 pt-4">
                         <button type="button" onClick={calculateBudget} className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-md flex items-center justify-center disabled:bg-blue-300" disabled={airfareLoading || ratesLoading}>{airfareLoading || ratesLoading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin"/> Calculating...</> : <><Calculator className="w-5 h-5 mr-2" />Calculate</>}</button>
-                        <button type="button" onClick={handleSaveRequest} className="flex-1 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-md flex items-center justify-center disabled:bg-green-300" disabled={isSaving || !isCalculated}>{isSaving ? <><Loader2 className="w-5 h-5 mr-2 animate-spin"/> Saving...</> : <><Save className="w-5 h-5 mr-2" />Save Request</>}</button>
+                        <button type="button" onClick={handleSaveRequest} className="flex-1 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-md flex items-center justify-center disabled:bg-green-300" disabled={isSaving || !isCalculated}>{isSaving ? <><Loader2 className="w-5 h-5 mr-2 animate-spin"/> Saving...</> : <><Save className="w-5 h-5 mr-2" />{editingRequestId ? 'Update Request' : 'Save Request'}</>}</button>
                     </div>
                 </form>
             </div>
+            {/* ... Budget Breakdown section ... */}
             <div className="bg-white p-6 rounded-2xl shadow-lg flex flex-col">
                 <h2 className="text-2xl font-semibold mb-6 border-b pb-3 text-slate-800">2. Budget Breakdown</h2>
                 <div className={`transition-opacity duration-500 ${isCalculated ? 'opacity-100' : 'opacity-50'}`}>
@@ -482,10 +515,11 @@ const App = () => {
                             <tr>
                                 <th scope="col" className="px-4 py-3">Submitted By</th>
                                 <th scope="col" className="px-4 py-3">Division</th>
-                                <th scope="col" className="px-4 py-3">Submission Date</th>
-                                <th scope="col" className="px-4 py-3">Target Date</th>
+                                <th scope="col" className="px-4 py-3">Departure</th>
                                 <th scope="col" className="px-4 py-3">Destination</th>
-                                <th scope="col" className="px-4 py-3 text-right font-bold">Overall Budget</th>
+                                <th scope="col" className="px-4 py-3">Target Date</th>
+                                <th scope="col" className="px-4 py-3">Fare Class</th>
+                                <th scope="col" className="px-4 py-3 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -493,10 +527,16 @@ const App = () => {
                                 <tr key={req.id} className="bg-white border-b hover:bg-slate-50">
                                     <td className="px-4 py-4">{req.submittedBy}</td>
                                     <td className="px-4 py-4">{req.division}</td>
-                                    <td className="px-4 py-4">{req.submissionTimestamp.toDate().toLocaleDateString()}</td>
-                                    <td className="px-4 py-4">{req.targetDate}</td>
+                                    <td className="px-4 py-4">{req.departureLocation}</td>
                                     <td className="px-4 py-4 font-medium text-slate-900">{req.city}, {req.country}</td>
-                                    <td className="px-4 py-4 text-right font-bold text-slate-900">{formatCurrency(req.overallBudget)}</td>
+                                    <td className="px-4 py-4">{req.targetDate}</td>
+                                    <td className="px-4 py-4">{req.fareClass}</td>
+                                    <td className="px-4 py-4 text-right">
+                                        <div className="flex justify-end items-center gap-3">
+                                            <button onClick={() => handleEditRequest(req)} className="text-blue-600 hover:text-blue-800" title="Edit"><Edit className="w-4 h-4"/></button>
+                                            <button onClick={() => handleDeleteRequest(req.id)} className="text-red-600 hover:text-red-800" title="Delete"><Trash2 className="w-4 h-4"/></button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
