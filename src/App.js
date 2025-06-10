@@ -6,7 +6,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 
-// --- Firebase Configuration (Corrected for Vercel Deployment) ---
+// --- Firebase Configuration (FOR VERCEL DEPLOYMENT) ---
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
@@ -347,9 +347,27 @@ const App = () => {
 
             const selectedDma = dmaData[country] || 0; setDma(selectedDma);
             
-            const destinationCapital = countryToCapital[country]
-            const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : destinationCapital;
-            
+            let destinationCityForFlight = null;
+            if (city && city !== 'Other Cities' && city !== 'All Cities') {
+                destinationCityForFlight = city;
+            } else {
+                const capital = countryToCapital[country];
+                if (capital && capital !== departureCity) {
+                    destinationCityForFlight = capital;
+                } else {
+                    if (hotelData[country]) {
+                        const fallbackCities = Object.keys(hotelData[country]).filter(c => 
+                            c !== 'Other Cities' && 
+                            c !== 'All Cities' && 
+                            c !== departureCity
+                        );
+                        if (fallbackCities.length > 0) {
+                            destinationCityForFlight = fallbackCities[0];
+                        }
+                    }
+                }
+            }
+
             let fetchedAirfare = 1500;
             if (destinationCityForFlight) {
                 try {
@@ -445,9 +463,9 @@ const App = () => {
         const dataToExport = reportFilter === 'All' ? savedRequests : savedRequests.filter(req => req.division === reportFilter);
         if (dataToExport.length === 0) { showNotification(`No data to download for ${reportFilter} division.`, "error"); return; }
         
-        const headers = ['Submitted By', 'Division', 'Departure', 'Destination', 'Fare Class', 'Target Date', 'Travel Days', 'No. of People', 'Overall Budget ($)'];
+        const headers = ['Submitted By', 'Division', 'Departure', 'Destination', 'Fare Class', 'No. of People', 'Target Date', 'Travel Days', 'Overall Budget ($)'];
         const rows = dataToExport.map(req => [
-                `"${req.submittedBy}"`, `"${req.division}"`, `"${req.departureCity}, ${req.departureCountry}"`, `"${req.city}, ${req.country}"`, `"${req.fareClass}"`, `"${req.targetDate}"`, req.travelDays, req.numberOfPeople || 1, req.overallBudget?.toFixed(2) || '0.00'
+                `"${req.submittedBy}"`, `"${req.division}"`, `"${req.departureCity}, ${req.departureCountry}"`, `"${req.city}, ${req.country}"`, `"${req.fareClass}"`, req.numberOfPeople || 1, `"${req.targetDate}"`, req.travelDays, req.overallBudget?.toFixed(2) || '0.00'
             ].join(','));
         const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
         const encodedUri = encodeURI(csvContent);
