@@ -309,47 +309,48 @@ const App = () => {
     };
 
     const calculateBudget = useCallback(async () => {
-        if (!country || !city || !travelDays || travelDays <= 0) {
-            showNotification("Please select a Country, City, and enter valid Expected Travel Days.", 'error'); return;
-        }
-        setIsCalculated(true); setAirfareLoading(true); setAirfareSourceUrl('');
-        try {
-            const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
-            setOriginalHotelInfo(hotelInfo);
-            const conversionRate = exchangeRates[hotelInfo.currency] || 1;
-            const convertedHotelFare = hotelInfo.rate * conversionRate;
-            setHotelFare(convertedHotelFare);
+    if (!country || !city || !travelDays || !targetDate || travelDays <= 0) {
+        showNotification("Please fill all fields, including a valid Target Date and Travel Days.", 'error'); return;
+    }
+    setIsCalculated(true); setAirfareLoading(true); setAirfareSourceUrl('');
+    try {
+        const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
+        setOriginalHotelInfo(hotelInfo);
+        const conversionRate = exchangeRates[hotelInfo.currency] || 1;
+        const convertedHotelFare = hotelInfo.rate * conversionRate;
+        setHotelFare(convertedHotelFare);
 
-            const selectedDma = dmaData[country] || 0; setDma(selectedDma);
-            
-            const capital = countryToCapital[country]
-            const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : capital;
-            
-            let fetchedAirfare = 1500;
-            if (destinationCityForFlight) {
-                try {
-                    const response = await fetch(`/api/getAirfare?destination=${encodeURIComponent(destinationCityForFlight)}`);
-                    if (!response.ok) throw new Error('Failed to fetch airfare from serverless function');
-                    const data = await response.json();
-                    fetchedAirfare = data.price;
-                    const url = `https://www.google.com/travel/flights?q=Flights%20from%20Manila%20to%20${encodeURIComponent(destinationCityForFlight)}`;
-                    setAirfareSourceUrl(url);
-                } catch (apiError) {
-                    console.error("Airfare API Error:", apiError);
-                    showNotification("Could not fetch live airfare. Using a default estimate.", 'error');
-                }
+        const selectedDma = dmaData[country] || 0; setDma(selectedDma);
+
+        const capital = countryToCapital[country]
+        const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : capital;
+
+        let fetchedAirfare = 1500;
+        if (destinationCityForFlight) {
+            try {
+                // UPDATED LINE: Now sends targetDate and travelDays
+                const response = await fetch(`/api/getAirfare?destination=${encodeURIComponent(destinationCityForFlight)}&targetDate=${targetDate}&travelDays=${travelDays}`);
+                if (!response.ok) throw new Error('Failed to fetch airfare from serverless function');
+                const data = await response.json();
+                fetchedAirfare = data.price;
+                const url = `https://www.google.com/travel/flights?q=Flights%20from%20Manila%20to%20${encodeURIComponent(destinationCityForFlight)}`;
+                setAirfareSourceUrl(url);
+            } catch (apiError) {
+                console.error("Airfare API Error:", apiError);
+                showNotification("Could not fetch live airfare. Using a default estimate.", 'error');
             }
-            setAirfare(fetchedAirfare);
-            const total = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
-            const cont = total * 0.05;
-            setTotalCost(total); setContingency(cont); setOverallBudget(total + cont);
-        } catch (error) {
-            console.error("Calculation Error:", error);
-            showNotification("An error occurred during calculation.", 'error');
-        } finally {
-            setAirfareLoading(false);
         }
-    }, [country, city, travelDays, exchangeRates]);
+        setAirfare(fetchedAirfare);
+        const total = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
+        const cont = total * 0.05;
+        setTotalCost(total); setContingency(cont); setOverallBudget(total + cont);
+    } catch (error) {
+        console.error("Calculation Error:", error);
+        showNotification("An error occurred during calculation.", 'error');
+    } finally {
+        setAirfareLoading(false);
+    }
+}, [country, city, travelDays, targetDate, exchangeRates]);
 
     const handleSaveRequest = async () => {
         if (!isCalculated || overallBudget === null) { showNotification("Please calculate a budget before saving.", "error"); return; }

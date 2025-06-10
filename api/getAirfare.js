@@ -1,12 +1,21 @@
 export default async function handler(req, res) {
-  const { destination } = req.query;
+  const { destination, targetDate, travelDays } = req.query;
 
-  if (!destination) {
-    return res.status(400).json({ error: 'Destination is required' });
+  if (!destination || !targetDate || !travelDays) {
+    return res.status(400).json({ error: 'Missing required query parameters.' });
   }
 
-  const prompt = `Find the median roundtrip business class flight price from Manila (MNL) to ${destination}. Return only the price in USD as a single number, without currency symbols or commas. For example: 2500.34`;
-  const apiKey = process.env.GOOGLE_API_KEY; 
+  // Calculate return date
+  const departureDate = new Date(targetDate);
+  const returnDate = new Date(departureDate);
+  returnDate.setDate(departureDate.getDate() + parseInt(travelDays, 10));
+
+  const departureDateString = departureDate.toISOString().split('T')[0];
+  const returnDateString = returnDate.toISOString().split('T')[0];
+
+  const prompt = `Find the median price for a roundtrip business class flight from Manila (MNL) to ${destination} departing on ${departureDateString} and returning on ${returnDateString}. The price should be in USD. Return only the price as a single number, without currency symbols or commas. For example: 2500.34`;
+
+  const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
     return res.status(500).json({ error: 'API key is not configured' });
