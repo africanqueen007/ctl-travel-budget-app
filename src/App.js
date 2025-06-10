@@ -209,6 +209,7 @@ const App = () => {
     const [targetAudience, setTargetAudience] = useState('');
     const [targetDate, setTargetDate] = useState('');
     const [travelDays, setTravelDays] = useState(1);
+    const [numberOfPeople, setNumberOfPeople] = useState(1);
     const [cities, setCities] = useState([]);
     
     // Calculation State
@@ -328,12 +329,12 @@ const App = () => {
         setSubmittedBy(user?.displayName || user?.email || 'Authenticated User');
         setDivision('CTLA'); setPurpose(''); setCountry(''); setCity(''); 
         setDepartureCountry('Philippines'); setDepartureCity('Manila');
-        setFareClass('Business'); setTargetAudience(''); setTargetDate(''); setTravelDays(1); setCities([]); clearResults();
+        setFareClass('Business'); setTargetAudience(''); setTargetDate(''); setTravelDays(1); setNumberOfPeople(1); setCities([]); clearResults();
         setEditingRequestId(null);
     };
 
     const calculateBudget = useCallback(async () => {
-        if (!country || !city || !departureCountry || !departureCity || !travelDays || !targetDate || travelDays <= 0) {
+        if (!country || !city || !departureCountry || !departureCity || !travelDays || !targetDate || travelDays <= 0 || numberOfPeople <= 0) {
             showNotification("Please fill all travel detail fields, including dates and locations.", 'error'); return;
         }
         setIsCalculated(true); setAirfareLoading(true); setAirfareSourceUrl('');
@@ -366,8 +367,9 @@ const App = () => {
                     fetchedAirfare = 1500;
                 }
             }
+            const perPersonCost = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
             setAirfare(fetchedAirfare);
-            const total = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
+            const total = perPersonCost * numberOfPeople;
             const cont = total * 0.05;
             setTotalCost(total); setContingency(cont); setOverallBudget(total + cont);
         } catch (error) {
@@ -376,14 +378,14 @@ const App = () => {
         } finally {
             setAirfareLoading(false);
         }
-    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, showNotification]);
+    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, showNotification]);
 
     const handleSaveRequest = async () => {
         if (!isCalculated || overallBudget === null) { showNotification("Please calculate a budget before saving.", "error"); return; }
         if (!db || !userId) { showNotification("Database not connected. Cannot save.", "error"); return; }
         setIsSaving(true);
         const requestData = {
-            submittedBy, division, purpose, country, city, departureCountry, departureCity, fareClass, targetAudience, targetDate, travelDays,
+            submittedBy, division, purpose, country, city, departureCountry, departureCity, fareClass, numberOfPeople, targetAudience, targetDate, travelDays,
             airfare, hotelFare, dma, totalCost, contingency, overallBudget, airfareSourceUrl,
             submissionTimestamp: Timestamp.now()
         };
@@ -433,6 +435,7 @@ const App = () => {
         setTargetAudience(request.targetAudience);
         setTargetDate(request.targetDate);
         setTravelDays(request.travelDays);
+        setNumberOfPeople(request.numberOfPeople || 1);
         setEditingRequestId(request.id);
         setView('calculator');
         showNotification("Now editing a saved request. Click Update Request when finished.", "success");
@@ -442,9 +445,9 @@ const App = () => {
         const dataToExport = reportFilter === 'All' ? savedRequests : savedRequests.filter(req => req.division === reportFilter);
         if (dataToExport.length === 0) { showNotification(`No data to download for ${reportFilter} division.`, "error"); return; }
         
-        const headers = ['Submitted By', 'Division', 'Departure', 'Destination', 'Fare Class', 'Target Date', 'Travel Days', 'Overall Budget ($)'];
+        const headers = ['Submitted By', 'Division', 'Departure', 'Destination', 'Fare Class', 'Target Date', 'Travel Days', 'No. of People', 'Overall Budget ($)'];
         const rows = dataToExport.map(req => [
-                `"${req.submittedBy}"`, `"${req.division}"`, `"${req.departureCity}, ${req.departureCountry}"`, `"${req.city}, ${req.country}"`, `"${req.fareClass}"`, `"${req.targetDate}"`, req.travelDays, req.overallBudget?.toFixed(2) || '0.00'
+                `"${req.submittedBy}"`, `"${req.division}"`, `"${req.departureCity}, ${req.departureCountry}"`, `"${req.city}, ${req.country}"`, `"${req.fareClass}"`, `"${req.targetDate}"`, req.travelDays, req.numberOfPeople || 1, req.overallBudget?.toFixed(2) || '0.00'
             ].join(','));
         const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
         const encodedUri = encodeURI(csvContent);
@@ -480,7 +483,11 @@ const App = () => {
                         </div>
                         <div className="space-y-2 mt-5"><label htmlFor="fareClass" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Fare Class</label><select id="fareClass" value={fareClass} onChange={e => setFareClass(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>Business</option><option>Economy</option></select></div>
                     </div>
-                    <div className="space-y-2"><label htmlFor="targetAudience" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Target Audience</label><input type="text" id="targetAudience" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="targetDate" className="font-medium text-sm text-slate-700 flex items-center"><CalendarIcon className="w-4 h-4 mr-2"/>Target Date</label><input type="date" id="targetDate" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="travelDays" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Expected Travel Days</label><input type="number" id="travelDays" value={travelDays} min="1" onChange={e => setTravelDays(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div className="space-y-2"><label htmlFor="targetAudience" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Target Audience</label><input type="text" id="targetAudience" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div>
+                        <div className="space-y-2"><label htmlFor="numberOfPeople" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Number of People</label><input type="number" id="numberOfPeople" value={numberOfPeople} min="1" onChange={e => setNumberOfPeople(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="targetDate" className="font-medium text-sm text-slate-700 flex items-center"><CalendarIcon className="w-4 h-4 mr-2"/>Target Date</label><input type="date" id="targetDate" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="travelDays" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Expected Travel Days</label><input type="number" id="travelDays" value={travelDays} min="1" onChange={e => setTravelDays(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div></div>
                     <div className="flex space-x-2 pt-4">
                         <button type="button" onClick={calculateBudget} className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-md flex items-center justify-center disabled:bg-blue-300" disabled={airfareLoading || ratesLoading}>{airfareLoading || ratesLoading ? <><Loader2 className="w-5 h-5 mr-2 animate-spin"/> Calculating...</> : <><Calculator className="w-5 h-5 mr-2" />Calculate</>}</button>
                         <button type="button" onClick={handleSaveRequest} className="flex-1 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-md flex items-center justify-center disabled:bg-green-300" disabled={isSaving || !isCalculated}>{isSaving ? <><Loader2 className="w-5 h-5 mr-2 animate-spin"/> Saving...</> : <><Save className="w-5 h-5 mr-2" />{editingRequestId ? 'Update Request' : 'Save Request'}</>}</button>
@@ -492,7 +499,7 @@ const App = () => {
                 <h2 className="text-2xl font-semibold mb-6 border-b pb-3 text-slate-800">2. Budget Breakdown</h2>
                 <div className={`transition-opacity duration-500 ${isCalculated ? 'opacity-100' : 'opacity-50'}`}>
                     <div className="space-y-4 text-slate-700">
-                        <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg"><span className="font-medium flex items-center"><Plane className="w-5 h-5 mr-3 text-blue-500"/>Average Airfare</span><div className="flex items-center space-x-2">{airfareLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-bold text-lg text-slate-900">{formatCurrency(airfare)}</span>}{airfareSourceUrl && !airfareLoading && (<a href={airfareSourceUrl} target="_blank" rel="noopener noreferrer" title="Consult Source" className="text-blue-500 hover:text-blue-700"><ExternalLink className="w-4 h-4"/></a>)}</div></div>
+                        <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg"><span className="font-medium flex items-center"><Plane className="w-5 h-5 mr-3 text-blue-500"/>Average Airfare (per person)</span><div className="flex items-center space-x-2">{airfareLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-bold text-lg text-slate-900">{formatCurrency(airfare)}</span>}{airfareSourceUrl && !airfareLoading && (<a href={airfareSourceUrl} target="_blank" rel="noopener noreferrer" title="Consult Source" className="text-blue-500 hover:text-blue-700"><ExternalLink className="w-4 h-4"/></a>)}</div></div>
                         <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
                             <span className="font-medium flex items-center"><Building2 className="w-5 h-5 mr-3 text-blue-500"/>Hotel Fare (per day)</span>
                             <div className="text-right">
@@ -542,7 +549,7 @@ const App = () => {
                                 <th scope="col" className="px-4 py-3">Division</th>
                                 <th scope="col" className="px-4 py-3">Departure</th>
                                 <th scope="col" className="px-4 py-3">Destination</th>
-                                <th scope="col" className="px-4 py-3">Target Date</th>
+                                <th scope="col" className="px-4 py-3">No. of People</th>
                                 <th scope="col" className="px-4 py-3">Fare Class</th>
                                 <th scope="col" className="px-4 py-3 text-right">Actions</th>
                             </tr>
@@ -554,7 +561,7 @@ const App = () => {
                                     <td className="px-4 py-4">{req.division}</td>
                                     <td className="px-4 py-4">{req.departureCity}, {req.departureCountry}</td>
                                     <td className="px-4 py-4 font-medium text-slate-900">{req.city}, {req.country}</td>
-                                    <td className="px-4 py-4">{req.targetDate}</td>
+                                    <td className="px-4 py-4">{req.numberOfPeople || 1}</td>
                                     <td className="px-4 py-4">{req.fareClass}</td>
                                     <td className="px-4 py-4 text-right">
                                         <div className="flex justify-end items-center gap-3">
