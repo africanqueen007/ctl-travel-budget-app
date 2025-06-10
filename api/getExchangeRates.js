@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'API key is not configured' });
+    return res.status(500).json({ error: true, message: 'API key is not configured on the server.' });
   }
 
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
@@ -19,16 +19,18 @@ export default async function handler(req, res) {
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`API call failed with status: ${response.status}`);
+    const result = await response.json();
+
+    if (!response.ok || result.error) {
+        console.error('Google API Error:', result.error);
+        throw new Error(result.error?.message || `API call failed with status: ${response.status}`);
     }
 
-    const result = await response.json();
     const ratesJson = result.candidates[0].content.parts[0].text;
     res.status(200).json(JSON.parse(ratesJson));
 
   } catch (error) {
-    console.error('Exchange rate fetch error:', error);
-    res.status(500).json({ "CNY": 0.14, "INR": 0.012, "PHP": 0.017 }); // Fallback
+    console.error('Exchange rate fetch error:', error.message);
+    res.status(500).json({ error: true, message: error.message, rates: { "CNY": 0.14, "INR": 0.012, "PHP": 0.017 }});
   }
 }

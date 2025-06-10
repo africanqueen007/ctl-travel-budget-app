@@ -227,23 +227,24 @@ const App = () => {
         setTimeout(() => setNotification({ message: '', type: '' }), 4000);
     };
 
-    const fetchExchangeRates = useCallback(async () => {
-        setRatesLoading(true);
-        showNotification("Fetching live exchange rates...", "success");
-        try {
-            const response = await fetch('/api/getExchangeRates');
-            if (!response.ok) throw new Error('Failed to fetch rates from serverless function');
-            const data = await response.json();
-            setExchangeRates(prev => ({ ...prev, ...data }));
-            showNotification("Exchange rates updated.", "success");
-        } catch (error) {
-            console.error("Failed to fetch dynamic exchange rates:", error);
-            setExchangeRates(fallbackExchangeRates);
-            showNotification("Could not fetch live rates. Using fallback values.", "error");
-        } finally {
-            setRatesLoading(false);
+   const fetchExchangeRates = useCallback(async () => {
+    setRatesLoading(true);
+    try {
+        const response = await fetch('/api/getExchangeRates');
+        const data = await response.json();
+        if (data.error) {
+            throw new Error(data.message);
         }
-    }, []);
+        setExchangeRates(prev => ({ ...prev, ...data }));
+        showNotification("Exchange rates updated.", "success");
+    } catch (error) {
+        console.error("Failed to fetch dynamic exchange rates:", error);
+        setExchangeRates(fallbackExchangeRates);
+        showNotification(`Could not fetch live rates: ${error.message}. Using defaults.`, "error");
+    } finally {
+        setRatesLoading(false);
+    }
+}, [showNotification]);
 
     // --- Firebase & Initial Data Load Effect ---
     useEffect(() => {
@@ -328,16 +329,21 @@ const App = () => {
         let fetchedAirfare = 1500;
         if (destinationCityForFlight) {
             try {
-                // UPDATED LINE: Now sends targetDate and travelDays
                 const response = await fetch(`/api/getAirfare?destination=${encodeURIComponent(destinationCityForFlight)}&targetDate=${targetDate}&travelDays=${travelDays}`);
-                if (!response.ok) throw new Error('Failed to fetch airfare from serverless function');
                 const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.message);
+                }
+
                 fetchedAirfare = data.price;
                 const url = `https://www.google.com/travel/flights?q=Flights%20from%20Manila%20to%20${encodeURIComponent(destinationCityForFlight)}`;
                 setAirfareSourceUrl(url);
+
             } catch (apiError) {
                 console.error("Airfare API Error:", apiError);
-                showNotification("Could not fetch live airfare. Using a default estimate.", 'error');
+                showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
+                fetchedAirfare = 1500; // Ensure fallback is set
             }
         }
         setAirfare(fetchedAirfare);
@@ -350,7 +356,7 @@ const App = () => {
     } finally {
         setAirfareLoading(false);
     }
-}, [country, city, travelDays, targetDate, exchangeRates]);
+}, [country, city, travelDays, targetDate, exchangeRates, showNotification]);
 
     const handleSaveRequest = async () => {
         if (!isCalculated || overallBudget === null) { showNotification("Please calculate a budget before saving.", "error"); return; }
