@@ -5,19 +5,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: true, message: 'Missing required query parameters.' });
   }
 
-  // To avoid timezone issues, parse the date string manually.
-  const [year, month, day] = targetDate.split('-').map(Number);
-  const departureDate = new Date(Date.UTC(year, month - 1, day));
-  
+  const departureDate = new Date(targetDate);
   const returnDate = new Date(departureDate);
   returnDate.setDate(departureDate.getDate() + parseInt(travelDays, 10));
 
   const departureDateString = departureDate.toISOString().split('T')[0];
   const returnDateString = returnDate.toISOString().split('T')[0];
 
-  // A more direct prompt to ensure a numeric response.
-  const prompt = `You are a flight data API. Your only job is to return a single number. Find the typical price for a roundtrip ${fareClass} class flight from ${departure} to ${destination}, departing on ${departureDateString} and returning on ${returnDateString}. Return only the estimated price in USD as a single number, without any text, currency symbols, or commas. For example: 2950.`;
-  
+  // A more structured and direct prompt to force the AI to use specific details.
+  const prompt = `
+    You are a flight data API. Your only job is to return a single number representing a flight price.
+    Analyze the following flight details:
+    - Departure City: ${departure}
+    - Destination City: ${destination}
+    - Departure Date: ${departureDateString}
+    - Return Date: ${returnDateString}
+    - Fare Class: ${fareClass}
+    Based on these details, provide the estimated median roundtrip flight price in USD.
+    Your entire response must be a single number only, with no currency symbols, commas, or explanatory text. For example: 3725.
+  `;
+
+  // Log the exact prompt being sent for debugging purposes.
+  console.log("Sending prompt to Google AI:", prompt);
+
   const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
@@ -42,7 +52,7 @@ export default async function handler(req, res) {
     }
 
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    
+
     console.log('AI Response Text:', text); 
 
     const parsedPrice = parseFloat(text?.replace(/[^0-9.]/g, ''));
