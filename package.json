@@ -15,7 +15,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "chmod +x ./node_modules/.bin/react-scripts && react-scripts build",
+    "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
@@ -36,7 +36,7 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
- },
+  },
   "devDependencies": {
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4"

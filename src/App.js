@@ -6,7 +6,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from 'firebase/firestore';
 
-// --- Firebase Configuration (FOR DEPLOYMENT) ---
+// --- Firebase Configuration (FOR VERCEL DEPLOYMENT) ---
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
@@ -230,24 +230,12 @@ const App = () => {
     const fetchExchangeRates = useCallback(async () => {
         setRatesLoading(true);
         showNotification("Fetching live exchange rates...", "success");
-        const prompt = `What are the current exchange rates for 1 CNY to USD, 1 INR to USD, and 1 PHP to USD? Please provide the answer in a valid JSON format like this: {"CNY": 0.14, "INR": 0.012, "PHP": 0.017}`;
         try {
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-            };
-            const apiKey = ""; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!response.ok) throw new Error(`API call failed`);
-            
-            const result = await response.json();
-            const ratesJson = result.candidates[0].content.parts[0].text;
-            const parsedRates = JSON.parse(ratesJson);
-
-            setExchangeRates(prev => ({...prev, ...parsedRates}));
+            const response = await fetch('/api/getExchangeRates');
+            if (!response.ok) throw new Error('Failed to fetch rates from serverless function');
+            const data = await response.json();
+            setExchangeRates(prev => ({ ...prev, ...data }));
             showNotification("Exchange rates updated.", "success");
-
         } catch (error) {
             console.error("Failed to fetch dynamic exchange rates:", error);
             setExchangeRates(fallbackExchangeRates);
@@ -260,11 +248,11 @@ const App = () => {
     // --- Firebase & Initial Data Load Effect ---
     useEffect(() => {
         fetchExchangeRates();
-        if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
+        if (firebaseConfig && firebaseConfig.apiKey) {
             const app = initializeApp(firebaseConfig);
             const authInstance = getAuth(app);
-            const dbInstance = getFirestore(app);
             setAuth(authInstance);
+            const dbInstance = getFirestore(app);
             setDb(dbInstance);
 
             const unsubscribe = onAuthStateChanged(authInstance, async (currentUser) => {
@@ -339,20 +327,15 @@ const App = () => {
             
             let fetchedAirfare = 1500;
             if (destinationCityForFlight) {
-                const url = `https://www.google.com/travel/flights?q=Flights%20from%20Manila%20to%20${encodeURIComponent(destinationCityForFlight)}`;
-                setAirfareSourceUrl(url);
-                const prompt = `Find the median roundtrip business class flight price from Manila (MNL) to ${destinationCityForFlight}. Return only the price in USD as a single number, without currency symbols or commas. For example: 2500.34`;
                 try {
-                    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
-                    const apiKey = ""; const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                    const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error(`API call failed`);
-                    const result = await response.json();
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    const parsedPrice = parseFloat(text?.replace(/[^0-9.]/g, ''));
-                    if (!isNaN(parsedPrice)) fetchedAirfare = parsedPrice;
+                    const response = await fetch(`/api/getAirfare?destination=${encodeURIComponent(destinationCityForFlight)}`);
+                    if (!response.ok) throw new Error('Failed to fetch airfare from serverless function');
+                    const data = await response.json();
+                    fetchedAirfare = data.price;
+                    const url = `https://www.google.com/travel/flights?q=Flights%20from%20Manila%20to%20${encodeURIComponent(destinationCityForFlight)}`;
+                    setAirfareSourceUrl(url);
                 } catch (apiError) {
-                    console.error("Gemini API Error:", apiError);
+                    console.error("Airfare API Error:", apiError);
                     showNotification("Could not fetch live airfare. Using a default estimate.", 'error');
                 }
             }
