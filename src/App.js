@@ -3,16 +3,14 @@ import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2,
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from 'firebase/firestore';
 
-// --- Firebase Configuration ---
+// --- Firebase Configuration (Corrected for this environment) ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// --- Data ---
-// UPDATED: Exchange rates will now be fetched dynamically. These are fallbacks.
+// --- Data & Conversion Rates ---
 const fallbackExchangeRates = {
     "USD": 1, "CNY": 0.14, "INR": 0.012, "PHP": 0.017
 };
@@ -251,7 +249,7 @@ const App = () => {
     // --- Firebase & Initial Data Load Effect ---
     useEffect(() => {
         fetchExchangeRates();
-        if (firebaseConfig.apiKey) {
+        if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
             const app = initializeApp(firebaseConfig);
             const authInstance = getAuth(app);
             const dbInstance = getFirestore(app);
@@ -264,8 +262,7 @@ const App = () => {
                     setSubmittedBy(currentUser.displayName || currentUser.email || 'Authenticated User');
                 } else {
                     try {
-                        if (initialAuthToken) await signInWithCustomToken(authInstance, initialAuthToken);
-                        else await signInAnonymously(authInstance);
+                        await signInAnonymously(authInstance);
                     } catch (error) {
                         console.error("Authentication Error:", error);
                         showNotification('Authentication failed. Please refresh.', 'error' );
@@ -274,7 +271,8 @@ const App = () => {
             });
             return () => unsubscribe();
         }
-    }, [fetchExchangeRates]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // --- Firestore Data Fetching Effect ---
     useEffect(() => {
@@ -454,7 +452,12 @@ const App = () => {
         </main>
     );
 
-    const renderReportsView = () => (
+    const renderReportsView = () => {
+        const filteredRequests = reportFilter === 'All'
+            ? savedRequests
+            : savedRequests.filter(req => req.division === reportFilter);
+
+        return (
          <div className="bg-white p-6 rounded-2xl shadow-lg col-span-1 lg:col-span-2">
             <div className="flex flex-wrap gap-4 justify-between items-center mb-6 border-b pb-3">
                 <h2 className="text-2xl font-semibold text-slate-800">My Saved Reports</h2>
@@ -472,7 +475,7 @@ const App = () => {
                 </div>
             </div>
             <div className="overflow-x-auto">
-                {savedRequests.length > 0 ? (
+                {filteredRequests.length > 0 ? (
                     <table className="w-full text-sm text-left text-slate-500">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-100">
                             <tr>
@@ -485,7 +488,7 @@ const App = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {savedRequests.map(req => (
+                            {filteredRequests.map(req => (
                                 <tr key={req.id} className="bg-white border-b hover:bg-slate-50">
                                     <td className="px-4 py-4">{req.submittedBy}</td>
                                     <td className="px-4 py-4">{req.division}</td>
@@ -500,7 +503,7 @@ const App = () => {
                 ) : (<div className="text-center py-12 text-slate-500"><LayoutDashboard className="w-12 h-12 mx-auto mb-4 text-slate-300"/><h3 className="text-lg font-semibold">No Saved Reports Found</h3><p>Calculate and save a budget request to see it here.</p></div>)}
             </div>
         </div>
-    );
+    )};
 
     return (
         <div className="bg-slate-50 min-h-screen font-sans text-slate-800 p-4 sm:p-6 lg:p-8">
