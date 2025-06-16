@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2, Plane, DollarSign, Percent, Calculator, Save, FileDown, LayoutDashboard, ExternalLink, Filter, RefreshCw, Trash2, Edit, XCircle, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2, Plane, DollarSign, Percent, Calculator, Save, FileDown, LayoutDashboard, ExternalLink, Filter, RefreshCw, Trash2, Edit, XCircle, ToggleLeft, ToggleRight, HelpCircle, X } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
@@ -230,6 +230,7 @@ const App = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [notification, setNotification] = useState({ message: '', type: '' });
     const [isCalculated, setIsCalculated] = useState(false);
+    const [showUserGuide, setShowUserGuide] = useState(false);
 
     const showNotification = (message, type) => {
         setNotification({ message, type });
@@ -556,6 +557,185 @@ const App = () => {
 
     const formatCurrency = (value) => value?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00';
     
+    const renderUserGuide = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl max-h-[90vh] overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 flex justify-between items-center">
+                    <div>
+                        <h2 className="text-2xl font-bold">🛫 CTL Travel Budget App Guide</h2>
+                        <p className="opacity-90 mt-1">Step-by-step instructions for using the app</p>
+                    </div>
+                    <button onClick={() => setShowUserGuide(false)} className="text-white hover:text-gray-200">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                
+                <div className="overflow-y-auto max-h-[calc(90vh-120px)] p-6">
+                    <div className="space-y-8">
+                        {/* Step 1 */}
+                        <div className="bg-slate-50 rounded-xl p-6 border-l-4 border-blue-500">
+                            <div className="flex items-center mb-4">
+                                <div className="bg-blue-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3">1</div>
+                                <h3 className="text-xl font-semibold text-slate-800">Getting Started - Basic Information</h3>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">👤 User Information</h4>
+                                    <p className="text-slate-600 text-sm mb-2"><span className="font-semibold text-red-600">Submitted by/User:</span> Auto-filled with your authenticated user name. Edit if needed.</p>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Division:</span> Select your department (CTLA, CTFA, CTOC, or CTAC) for report organization.</p>
+                                </div>
+                                
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">📝 Purpose/Event Description</h4>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Required:</span> Provide detailed travel purpose, event names, meeting objectives, or business reasons.</p>
+                                </div>
+                                
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                    <p className="text-yellow-800 text-sm"><span className="font-semibold">💡 Pro Tip:</span> Be specific in your purpose description - it helps with budget approval and record-keeping!</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Step 2 */}
+                        <div className="bg-slate-50 rounded-xl p-6 border-l-4 border-green-500">
+                            <div className="flex items-center mb-4">
+                                <div className="bg-green-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3">2</div>
+                                <h3 className="text-xl font-semibold text-slate-800">Flight Details Configuration</h3>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">🛫 Departure & Destination</h4>
+                                    <p className="text-slate-600 text-sm mb-1"><span className="font-semibold text-red-600">Departure:</span> Select country and city where journey begins</p>
+                                    <p className="text-slate-600 text-sm mb-1"><span className="font-semibold text-red-600">Destination:</span> Choose target country and city</p>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Fare Class:</span> Business or Economy for airfare calculations</p>
+                                </div>
+                                
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <h4 className="font-semibold text-blue-600 mb-2">🎛️ Manual Airfare Override</h4>
+                                    <p className="text-slate-600 text-sm mb-2">Toggle this feature to enter custom airfare instead of API-fetched prices:</p>
+                                    <ul className="text-slate-600 text-sm space-y-1 ml-4">
+                                        <li>• <span className="font-semibold">OFF:</span> App fetches current airfare automatically</li>
+                                        <li>• <span className="font-semibold">ON:</span> Enter your own airfare amount in USD</li>
+                                        <li>• Manual entries are marked with orange "Manual" badges</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Step 3 */}
+                        <div className="bg-slate-50 rounded-xl p-6 border-l-4 border-purple-500">
+                            <div className="flex items-center mb-4">
+                                <div className="bg-purple-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3">3</div>
+                                <h3 className="text-xl font-semibold text-slate-800">Travel Details & Timing</h3>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">👥 Attendee Information</h4>
+                                    <p className="text-slate-600 text-sm mb-1"><span className="font-semibold text-green-600">Target Audience:</span> Optional - describe who will attend</p>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Number of People:</span> Total travelers (affects final budget)</p>
+                                </div>
+                                
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">📅 Schedule Information</h4>
+                                    <p className="text-slate-600 text-sm mb-1"><span className="font-semibold text-red-600">Target Date:</span> Departure date (affects airfare pricing)</p>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Travel Days:</span> Total days (affects hotel and DMA costs)</p>
+                                </div>
+                                
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                    <p className="text-yellow-800 text-sm font-semibold mb-2">📊 Cost Calculation Notes:</p>
+                                    <ul className="text-yellow-800 text-sm space-y-1 ml-4">
+                                        <li>• Hotel rates: per day × travel days</li>
+                                        <li>• DMA (Daily Meal Allowance): per day × travel days</li>
+                                        <li>• All costs multiplied by number of people</li>
+                                        <li>• 5% contingency automatically added</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Step 4 */}
+                        <div className="bg-slate-50 rounded-xl p-6 border-l-4 border-orange-500">
+                            <div className="flex items-center mb-4">
+                                <div className="bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3">4</div>
+                                <h3 className="text-xl font-semibold text-slate-800">Calculate & Save Your Budget</h3>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white rounded-lg p-4 border border-slate-200 text-center">
+                                    <div className="text-2xl mb-2">🧮</div>
+                                    <h4 className="font-semibold text-slate-800 text-sm">Calculate Budget</h4>
+                                    <p className="text-slate-600 text-xs mt-1">Fetch airfare, hotel rates, and generate breakdown</p>
+                                </div>
+                                <div className="bg-white rounded-lg p-4 border border-slate-200 text-center">
+                                    <div className="text-2xl mb-2">👀</div>
+                                    <h4 className="font-semibold text-slate-800 text-sm">Review Results</h4>
+                                    <p className="text-slate-600 text-xs mt-1">Check budget breakdown and verify amounts</p>
+                                </div>
+                                <div className="bg-white rounded-lg p-4 border border-slate-200 text-center">
+                                    <div className="text-2xl mb-2">💾</div>
+                                    <h4 className="font-semibold text-slate-800 text-sm">Save Request</h4>
+                                    <p className="text-slate-600 text-xs mt-1">Store budget for future reference</p>
+                                </div>
+                                <div className="bg-white rounded-lg p-4 border border-slate-200 text-center">
+                                    <div className="text-2xl mb-2">📊</div>
+                                    <h4 className="font-semibold text-slate-800 text-sm">View Reports</h4>
+                                    <p className="text-slate-600 text-xs mt-1">See saved budgets and download CSV</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Step 5 */}
+                        <div className="bg-slate-50 rounded-xl p-6 border-l-4 border-indigo-500">
+                            <div className="flex items-center mb-4">
+                                <div className="bg-indigo-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3">5</div>
+                                <h3 className="text-xl font-semibold text-slate-800">Understanding Your Budget Breakdown</h3>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">💰 Cost Components</h4>
+                                    <div className="text-slate-600 text-sm space-y-1">
+                                        <p><span className="font-semibold">Airfare:</span> Roundtrip flight cost (per person)</p>
+                                        <p><span className="font-semibold">Hotel Fare:</span> Daily accommodation cost</p>
+                                        <p><span className="font-semibold">DMA:</span> Daily Meal Allowance per day</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-white rounded-lg p-4 border border-slate-200">
+                                    <h4 className="font-semibold text-blue-600 mb-2">📈 Final Calculations</h4>
+                                    <div className="text-slate-600 text-sm space-y-1">
+                                        <p><span className="font-semibold">Total Cost:</span> (Airfare + Hotel×Days + DMA×Days) × People</p>
+                                        <p><span className="font-semibold">Contingency:</span> 5% buffer added to total</p>
+                                        <p><span className="font-semibold">Overall Budget:</span> Total Cost + Contingency</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <p className="text-blue-800 text-sm"><span className="font-semibold">🔄 Currency Conversion:</span> Hotel rates in local currency (CNY, INR, PHP) are automatically converted to USD using live exchange rates.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Final Tips */}
+                        <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-xl p-6 text-center">
+                            <h3 className="text-xl font-bold mb-3">🎉 You're Ready to Start!</h3>
+                            <p className="mb-4">Follow these steps to create accurate travel budgets for your CTL trips.</p>
+                            <div className="flex flex-wrap justify-center gap-2 text-sm">
+                                <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full">Calculate Budget</span>
+                                <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full">Save Request</span>
+                                <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full">View Reports</span>
+                            </div>
+                            <p className="mt-4 text-sm opacity-90">💡 All required fields must be filled before calculating. The app will guide you with notifications!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+    
     const renderCalculatorView = () => (
         <main className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white p-6 rounded-2xl shadow-lg">
@@ -741,11 +921,13 @@ const App = () => {
                          <div className="flex items-center space-x-4">
                             <button onClick={() => setView('calculator')} className={`px-4 py-2 rounded-lg font-semibold flex items-center space-x-2 ${view === 'calculator' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'}`}><Calculator className="w-5 h-5"/><span>Calculator</span></button>
                             <button onClick={() => setView('reports')} className={`px-4 py-2 rounded-lg font-semibold flex items-center space-x-2 ${view === 'reports' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'}`}><LayoutDashboard className="w-5 h-5"/><span>Reports</span></button>
+                            <button onClick={() => setShowUserGuide(true)} className="px-4 py-2 rounded-lg font-semibold flex items-center space-x-2 bg-green-600 text-white hover:bg-green-700 transition-colors"><HelpCircle className="w-5 h-5"/><span>Help</span></button>
                          </div>
                     </div>
                      <div className="mt-4 text-center text-xs text-slate-500">{user ? <>Logged in as: <span className="font-mono bg-slate-200 px-2 py-1 rounded">{userId}</span></> : <><Loader2 className="w-4 h-4 inline-block animate-spin mr-2"/>Authenticating...</>}</div>
                 </header>
                 {notification.message && (<div className={`fixed top-5 right-5 p-4 rounded-lg shadow-xl z-50 text-white ${notification.type === 'success' ? 'bg-green-500' : 'bg-blue-500'}`}>{notification.message}</div>)}
+                {showUserGuide && renderUserGuide()}
                 {view === 'calculator' ? renderCalculatorView() : renderReportsView()}
             </div>
         </div>
