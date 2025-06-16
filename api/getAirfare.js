@@ -1,23 +1,22 @@
 export default async function handler(req, res) {
-  const { destination, departure, targetDate, travelDays, fareClass } = req.query;
+  const { destinationCity, destinationCountry, departureCity, departureCountry, targetDate, travelDays, fareClass } = req.query;
 
-  if (!destination || !departure || !targetDate || !travelDays || !fareClass) {
+  if (!destinationCity || !destinationCountry || !departureCity || !departureCountry || !targetDate || !travelDays || !fareClass) {
     return res.status(400).json({ error: true, message: 'Missing required query parameters.' });
   }
 
-  const departureDate = new Date(targetDate);
+  const [year, month, day] = targetDate.split('-').map(Number);
+  const departureDate = new Date(Date.UTC(year, month - 1, day));
   const returnDate = new Date(departureDate);
   returnDate.setDate(departureDate.getDate() + parseInt(travelDays, 10));
-
   const departureDateString = departureDate.toISOString().split('T')[0];
   const returnDateString = returnDate.toISOString().split('T')[0];
 
-  // A more structured and direct prompt to force the AI to use specific details.
   const prompt = `
     You are a flight data API. Your only job is to return a single number representing a flight price.
     Analyze the following flight details:
-    - Departure City: ${departure}
-    - Destination City: ${destination}
+    - Departure: ${departureCity}, ${departureCountry}
+    - Destination: ${destinationCity}, ${destinationCountry}
     - Departure Date: ${departureDateString}
     - Return Date: ${returnDateString}
     - Fare Class: ${fareClass}
@@ -25,7 +24,6 @@ export default async function handler(req, res) {
     Your entire response must be a single number only, with no currency symbols, commas, or explanatory text. For example: 3725.
   `;
 
-  // Log the exact prompt being sent for debugging purposes.
   console.log("Sending prompt to Google AI:", prompt);
 
   const apiKey = process.env.GOOGLE_API_KEY;
