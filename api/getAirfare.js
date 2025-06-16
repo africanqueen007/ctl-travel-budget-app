@@ -1,7 +1,11 @@
 export default async function handler(req, res) {
   const { destinationCity, destinationCountry, departureCity, departureCountry, targetDate, travelDays, fareClass, numberOfPeople } = req.query;
 
+// ADD THIS DEBUG LOGGING:
+  console.log('DEBUG - Main handler received parameters:', req.query);
+  
   if (!destinationCity || !destinationCountry || !departureCity || !departureCountry || !targetDate || !travelDays || !fareClass) {
+    console.log('DEBUG - Missing parameters check failed');
     return res.status(400).json({ error: true, message: 'Missing required query parameters.' });
   }
 
@@ -63,6 +67,14 @@ export default async function handler(req, res) {
 async function fallbackToAIEstimation(req, res) {
   const { destinationCity, destinationCountry, departureCity, departureCountry, targetDate, travelDays, fareClass } = req.query;
   
+  // ADD THIS DEBUG LOGGING:
+  console.log('DEBUG - All parameters received:', {
+    destinationCity, destinationCountry, departureCity, departureCountry, 
+    targetDate, travelDays, fareClass
+  });
+  console.log('DEBUG - targetDate type:', typeof targetDate);
+  console.log('DEBUG - targetDate value:', targetDate);
+
   // Safer date parsing with validation
 let departureDateString, returnDateString;
 
