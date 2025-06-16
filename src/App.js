@@ -381,7 +381,7 @@ const App = () => {
     }
 }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, showNotification]);
 
-    const handleDeleteRequest = async (id) => {
+   	const handleDeleteRequest = async (id) => {
         if (!db || !userId) { showNotification("Database not connected. Cannot delete.", "error"); return; }
         if (window.confirm("Are you sure you want to delete this entry?")) {
             try {
@@ -414,6 +414,74 @@ const App = () => {
         showNotification("Now editing a saved request. Click Update Request when finished.", "success");
     };
 
+const handleDeleteRequest = async (id) => {
+    // ... your existing code (keep this)
+};
+
+const handleEditRequest = (request) => {
+    // ... your existing code (keep this)  
+};
+
+// ADD THIS NEW FUNCTION:
+const handleSaveRequest = async () => {
+    if (!db || !userId) {
+        showNotification("Database not connected. Cannot save.", "error");
+        return;
+    }
+
+    if (!submittedBy || !purpose || !country || !city || !targetDate || !isCalculated) {
+        showNotification("Please fill all fields and calculate budget first.", "error");
+        return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+        const requestsCollectionPath = `artifacts/${appId}/users/${userId}/travelRequests`;
+        
+        const requestData = {
+            submittedBy,
+            division,
+            purpose,
+            departureCity,
+            departureCountry,
+            city,
+            country,
+            fareClass,
+            targetAudience,
+            targetDate,
+            travelDays,
+            numberOfPeople,
+            airfare,
+            hotelFare,
+            dma,
+            totalCost,
+            contingency,
+            overallBudget,
+            submissionTimestamp: Timestamp.now()
+        };
+
+        if (editingRequestId) {
+            // Update existing request
+            const docRef = doc(db, requestsCollectionPath, editingRequestId);
+            await updateDoc(docRef, requestData);
+            showNotification("Request updated successfully.", "success");
+            setEditingRequestId(null);
+        } else {
+            // Create new request
+            await addDoc(collection(db, requestsCollectionPath), requestData);
+            showNotification("Request saved successfully.", "success");
+        }
+        
+        resetForm();
+    } catch (error) {
+        console.error("Error saving request: ", error);
+        showNotification("Failed to save request.", "error");
+    } finally {
+        setIsSaving(false);
+    }
+};
+	
     const downloadCSV = () => {
         const dataToExport = reportFilter === 'All' ? savedRequests : savedRequests.filter(req => req.division === reportFilter);
         if (dataToExport.length === 0) { showNotification(`No data to download for ${reportFilter} division.`, "error"); return; }
