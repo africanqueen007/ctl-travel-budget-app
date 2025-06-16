@@ -414,13 +414,6 @@ const App = () => {
         showNotification("Now editing a saved request. Click Update Request when finished.", "success");
     };
 
-const handleDeleteRequest = async (id) => {
-    // ... your existing code (keep this)
-};
-
-const handleEditRequest = (request) => {
-    // ... your existing code (keep this)  
-};
 
 // ADD THIS NEW FUNCTION:
 const handleSaveRequest = async () => {
