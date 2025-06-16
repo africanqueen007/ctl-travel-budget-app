@@ -334,54 +334,63 @@ const App = () => {
     };
 
     const calculateBudget = useCallback(async () => {
-    if (!country || !city || !departureCountry || !departureCity || !travelDays || !targetDate || travelDays <= 0 || numberOfPeople <= 0) {
-        showNotification("Please fill all travel detail fields, including dates and locations.", 'error'); return;
-    }
-    setIsCalculated(true); setAirfareLoading(true); setAirfareSourceUrl('');
-    try {
-        const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
-        setOriginalHotelInfo(hotelInfo);
-        const conversionRate = exchangeRates[hotelInfo.currency] || 1;
-        const convertedHotelFare = hotelInfo.rate * conversionRate;
-        setHotelFare(convertedHotelFare);
-
-        const selectedDma = dmaData[country] || 0; setDma(selectedDma);
-
-        const destinationCapital = countryToCapital[country]
-        const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : destinationCapital;
-
-        let fetchedAirfare = 1500;
-        if (destinationCityForFlight) {
-            try {
-                // UPDATED LINE: Now sends country information for both departure and destination
-                const response = await fetch(`/api/getAirfare?destinationCity=<span class="math-inline">\{encodeURIComponent\(destinationCityForFlight\)\}&destinationCountry\=</span>{encodeURIComponent(country)}&departureCity=<span class="math-inline">\{encodeURIComponent\(departureCity\)\}&departureCountry\=</span>{encodeURIComponent(departureCountry)}&targetDate=<span class="math-inline">\{targetDate\}&travelDays\=</span>{travelDays}&fareClass=${fareClass}`);
-                const data = await response.json();
-
-                if (data.error) throw new Error(data.message);
-                fetchedAirfare = data.price;
-                const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureCity}%20to%20${encodeURIComponent(destinationCityForFlight)}`;
-                setAirfareSourceUrl(url);
-
-            } catch (apiError) {
-                console.error("Airfare API Error:", apiError);
-                showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
-                fetchedAirfare = 1500;
-            }
+        if (!country || !city || !departureCountry || !departureCity || !travelDays || !targetDate || travelDays <= 0 || numberOfPeople <= 0) {
+            showNotification("Please fill all travel detail fields, including dates and locations.", 'error'); 
+            return;
         }
-        const perPersonCost = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
-        setAirfare(fetchedAirfare);
-        const total = perPersonCost * numberOfPeople;
-        const cont = total * 0.05;
-        setTotalCost(total); setContingency(cont); setOverallBudget(total + cont);
-    } catch (error) {
-        console.error("Calculation Error:", error);
-        showNotification("An error occurred during calculation.", 'error');
-    } finally {
-        setAirfareLoading(false);
-    }
-}, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, showNotification]);
+        
+        setIsCalculated(true); 
+        setAirfareLoading(true); 
+        setAirfareSourceUrl('');
+        
+        try {
+            const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
+            setOriginalHotelInfo(hotelInfo);
+            const conversionRate = exchangeRates[hotelInfo.currency] || 1;
+            const convertedHotelFare = hotelInfo.rate * conversionRate;
+            setHotelFare(convertedHotelFare);
 
-   	const handleDeleteRequest = async (id) => {
+            const selectedDma = dmaData[country] || 0; 
+            setDma(selectedDma);
+
+            const destinationCapital = countryToCapital[country];
+            const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : destinationCapital;
+
+            let fetchedAirfare = 1500;
+            if (destinationCityForFlight) {
+                try {
+                    // FIXED: Proper template literal with backticks and ${} syntax
+                    const response = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight)}&destinationCountry=${encodeURIComponent(country)}&departureCity=${encodeURIComponent(departureCity)}&departureCountry=${encodeURIComponent(departureCountry)}&targetDate=${targetDate}&travelDays=${travelDays}&fareClass=${fareClass}`);
+                    const data = await response.json();
+
+                    if (data.error) throw new Error(data.message);
+                    fetchedAirfare = data.price;
+                    const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureCity}%20to%20${encodeURIComponent(destinationCityForFlight)}`;
+                    setAirfareSourceUrl(url);
+
+                } catch (apiError) {
+                    console.error("Airfare API Error:", apiError);
+                    showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
+                    fetchedAirfare = 1500;
+                }
+            }
+            
+            const perPersonCost = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
+            setAirfare(fetchedAirfare);
+            const total = perPersonCost * numberOfPeople;
+            const cont = total * 0.05;
+            setTotalCost(total); 
+            setContingency(cont); 
+            setOverallBudget(total + cont);
+        } catch (error) {
+            console.error("Calculation Error:", error);
+            showNotification("An error occurred during calculation.", 'error');
+        } finally {
+            setAirfareLoading(false);
+        }
+    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, showNotification]);
+
+    const handleDeleteRequest = async (id) => {
         if (!db || !userId) { showNotification("Database not connected. Cannot delete.", "error"); return; }
         if (window.confirm("Are you sure you want to delete this entry?")) {
             try {
@@ -414,66 +423,64 @@ const App = () => {
         showNotification("Now editing a saved request. Click Update Request when finished.", "success");
     };
 
-
-// ADD THIS NEW FUNCTION:
-const handleSaveRequest = async () => {
-    if (!db || !userId) {
-        showNotification("Database not connected. Cannot save.", "error");
-        return;
-    }
-
-    if (!submittedBy || !purpose || !country || !city || !targetDate || !isCalculated) {
-        showNotification("Please fill all fields and calculate budget first.", "error");
-        return;
-    }
-
-    setIsSaving(true);
-    
-    try {
-        const requestsCollectionPath = `artifacts/${appId}/users/${userId}/travelRequests`;
-        
-        const requestData = {
-            submittedBy,
-            division,
-            purpose,
-            departureCity,
-            departureCountry,
-            city,
-            country,
-            fareClass,
-            targetAudience,
-            targetDate,
-            travelDays,
-            numberOfPeople,
-            airfare,
-            hotelFare,
-            dma,
-            totalCost,
-            contingency,
-            overallBudget,
-            submissionTimestamp: Timestamp.now()
-        };
-
-        if (editingRequestId) {
-            // Update existing request
-            const docRef = doc(db, requestsCollectionPath, editingRequestId);
-            await updateDoc(docRef, requestData);
-            showNotification("Request updated successfully.", "success");
-            setEditingRequestId(null);
-        } else {
-            // Create new request
-            await addDoc(collection(db, requestsCollectionPath), requestData);
-            showNotification("Request saved successfully.", "success");
+    const handleSaveRequest = async () => {
+        if (!db || !userId) {
+            showNotification("Database not connected. Cannot save.", "error");
+            return;
         }
+
+        if (!submittedBy || !purpose || !country || !city || !targetDate || !isCalculated) {
+            showNotification("Please fill all fields and calculate budget first.", "error");
+            return;
+        }
+
+        setIsSaving(true);
         
-        resetForm();
-    } catch (error) {
-        console.error("Error saving request: ", error);
-        showNotification("Failed to save request.", "error");
-    } finally {
-        setIsSaving(false);
-    }
-};
+        try {
+            const requestsCollectionPath = `artifacts/${appId}/users/${userId}/travelRequests`;
+            
+            const requestData = {
+                submittedBy,
+                division,
+                purpose,
+                departureCity,
+                departureCountry,
+                city,
+                country,
+                fareClass,
+                targetAudience,
+                targetDate,
+                travelDays,
+                numberOfPeople,
+                airfare,
+                hotelFare,
+                dma,
+                totalCost,
+                contingency,
+                overallBudget,
+                submissionTimestamp: Timestamp.now()
+            };
+
+            if (editingRequestId) {
+                // Update existing request
+                const docRef = doc(db, requestsCollectionPath, editingRequestId);
+                await updateDoc(docRef, requestData);
+                showNotification("Request updated successfully.", "success");
+                setEditingRequestId(null);
+            } else {
+                // Create new request
+                await addDoc(collection(db, requestsCollectionPath), requestData);
+                showNotification("Request saved successfully.", "success");
+            }
+            
+            resetForm();
+        } catch (error) {
+            console.error("Error saving request: ", error);
+            showNotification("Failed to save request.", "error");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 	
     const downloadCSV = () => {
         const dataToExport = reportFilter === 'All' ? savedRequests : savedRequests.filter(req => req.division === reportFilter);
@@ -528,7 +535,6 @@ const handleSaveRequest = async () => {
                     </div>
                 </form>
             </div>
-            {/* ... Budget Breakdown section ... */}
             <div className="bg-white p-6 rounded-2xl shadow-lg flex flex-col">
                 <h2 className="text-2xl font-semibold mb-6 border-b pb-3 text-slate-800">2. Budget Breakdown</h2>
                 <div className={`transition-opacity duration-500 ${isCalculated ? 'opacity-100' : 'opacity-50'}`}>
