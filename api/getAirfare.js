@@ -63,12 +63,48 @@ export default async function handler(req, res) {
 async function fallbackToAIEstimation(req, res) {
   const { destinationCity, destinationCountry, departureCity, departureCountry, targetDate, travelDays, fareClass } = req.query;
   
+  // Safer date parsing with validation
+let departureDateString, returnDateString;
+
+try {
+  if (!targetDate) {
+    throw new Error('No target date provided');
+  }
+
   const [year, month, day] = targetDate.split('-').map(Number);
+  
+  // Validate date components
+  if (!year || !month || !day || month < 1 || month > 12 || day < 1 || day > 31) {
+    throw new Error('Invalid date format');
+  }
+
   const departureDate = new Date(Date.UTC(year, month - 1, day));
   const returnDate = new Date(departureDate);
+  
+  // Validate dates
+  if (isNaN(departureDate.getTime())) {
+    throw new Error('Invalid departure date');
+  }
+
   returnDate.setDate(departureDate.getDate() + parseInt(travelDays, 10));
-  const departureDateString = departureDate.toISOString().split('T')[0];
-  const returnDateString = returnDate.toISOString().split('T')[0];
+  
+  if (isNaN(returnDate.getTime())) {
+    throw new Error('Invalid return date');
+  }
+
+  departureDateString = departureDate.toISOString().split('T')[0];
+  returnDateString = returnDate.toISOString().split('T')[0];
+
+} catch (dateError) {
+  console.error('Date parsing error:', dateError.message);
+  // Use default dates if parsing fails
+  const today = new Date();
+  const nextWeek = new Date(today);
+  nextWeek.setDate(today.getDate() + 7);
+  
+  departureDateString = today.toISOString().split('T')[0];
+  returnDateString = nextWeek.toISOString().split('T')[0];
+}
 
   const prompt = `
     You are a flight data API. Your only job is to return a single number representing a flight price.
