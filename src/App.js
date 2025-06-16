@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2, Plane, DollarSign, Percent, Calculator, Save, FileDown, LayoutDashboard, ExternalLink, Filter, RefreshCw, Trash2, Edit, XCircle } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Briefcase, Users, MapPin, Building2, Plane, DollarSign, Percent, Calculator, Save, FileDown, LayoutDashboard, ExternalLink, Filter, RefreshCw, Trash2, Edit, XCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp } from 'firebase/app';
@@ -19,7 +19,6 @@ const firebaseConfig = {
 };
 
 const appId = process.env.REACT_APP_ID || 'default-app-id';
-
 
 // --- Data & Conversion Rates ---
 const fallbackExchangeRates = {
@@ -212,6 +211,10 @@ const App = () => {
     const [numberOfPeople, setNumberOfPeople] = useState(1);
     const [cities, setCities] = useState([]);
     
+    // Manual Airfare Override State
+    const [manualAirfareMode, setManualAirfareMode] = useState(false);
+    const [manualAirfarePrice, setManualAirfarePrice] = useState('');
+    
     // Calculation State
     const [airfare, setAirfare] = useState(null);
     const [hotelFare, setHotelFare] = useState(null);
@@ -331,12 +334,23 @@ const App = () => {
         setDepartureCountry('Philippines'); setDepartureCity('Manila');
         setFareClass('Business'); setTargetAudience(''); setTargetDate(''); setTravelDays(1); setNumberOfPeople(1); setCities([]); clearResults();
         setEditingRequestId(null);
+        setManualAirfareMode(false);
+        setManualAirfarePrice('');
     };
 
     const calculateBudget = useCallback(async () => {
         if (!country || !city || !departureCountry || !departureCity || !travelDays || !targetDate || travelDays <= 0 || numberOfPeople <= 0) {
             showNotification("Please fill all travel detail fields, including dates and locations.", 'error'); 
             return;
+        }
+        
+        // Validate manual airfare if in manual mode
+        if (manualAirfareMode) {
+            const manualPrice = parseFloat(manualAirfarePrice);
+            if (isNaN(manualPrice) || manualPrice <= 0) {
+                showNotification("Please enter a valid manual airfare price.", 'error');
+                return;
+            }
         }
         
         setIsCalculated(true); 
@@ -353,30 +367,38 @@ const App = () => {
             const selectedDma = dmaData[country] || 0; 
             setDma(selectedDma);
 
-            const destinationCapital = countryToCapital[country];
-            const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : destinationCapital;
+            let fetchedAirfare;
+            
+            if (manualAirfareMode) {
+                // Use manual airfare price
+                fetchedAirfare = parseFloat(manualAirfarePrice);
+                setAirfare(fetchedAirfare);
+            } else {
+                // Fetch airfare from API
+                const destinationCapital = countryToCapital[country];
+                const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : destinationCapital;
 
-            let fetchedAirfare = 1500;
-            if (destinationCityForFlight) {
-                try {
-                    // FIXED: Proper template literal with backticks and ${} syntax
-                    const response = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight)}&destinationCountry=${encodeURIComponent(country)}&departureCity=${encodeURIComponent(departureCity)}&departureCountry=${encodeURIComponent(departureCountry)}&targetDate=${targetDate}&travelDays=${travelDays}&fareClass=${fareClass}`);
-                    const data = await response.json();
+                fetchedAirfare = 1500;
+                if (destinationCityForFlight) {
+                    try {
+                        const response = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight)}&destinationCountry=${encodeURIComponent(country)}&departureCity=${encodeURIComponent(departureCity)}&departureCountry=${encodeURIComponent(departureCountry)}&targetDate=${targetDate}&travelDays=${travelDays}&fareClass=${fareClass}`);
+                        const data = await response.json();
 
-                    if (data.error) throw new Error(data.message);
-                    fetchedAirfare = data.price;
-                    const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureCity}%20to%20${encodeURIComponent(destinationCityForFlight)}`;
-                    setAirfareSourceUrl(url);
+                        if (data.error) throw new Error(data.message);
+                        fetchedAirfare = data.price;
+                        const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureCity}%20to%20${encodeURIComponent(destinationCityForFlight)}`;
+                        setAirfareSourceUrl(url);
 
-                } catch (apiError) {
-                    console.error("Airfare API Error:", apiError);
-                    showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
-                    fetchedAirfare = 1500;
+                    } catch (apiError) {
+                        console.error("Airfare API Error:", apiError);
+                        showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
+                        fetchedAirfare = 1500;
+                    }
                 }
+                setAirfare(fetchedAirfare);
             }
             
             const perPersonCost = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
-            setAirfare(fetchedAirfare);
             const total = perPersonCost * numberOfPeople;
             const cont = total * 0.05;
             setTotalCost(total); 
@@ -388,7 +410,7 @@ const App = () => {
         } finally {
             setAirfareLoading(false);
         }
-    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, showNotification]);
+    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, manualAirfareMode, manualAirfarePrice, showNotification]);
 
     const handleDeleteRequest = async (id) => {
         if (!db || !userId) { showNotification("Database not connected. Cannot delete.", "error"); return; }
@@ -418,6 +440,16 @@ const App = () => {
         setTargetDate(request.targetDate);
         setTravelDays(request.travelDays);
         setNumberOfPeople(request.numberOfPeople || 1);
+        
+        // Handle manual airfare override data
+        if (request.manualAirfareMode) {
+            setManualAirfareMode(true);
+            setManualAirfarePrice(request.airfare?.toString() || '');
+        } else {
+            setManualAirfareMode(false);
+            setManualAirfarePrice('');
+        }
+        
         setEditingRequestId(request.id);
         setView('calculator');
         showNotification("Now editing a saved request. Click Update Request when finished.", "success");
@@ -458,6 +490,7 @@ const App = () => {
                 totalCost,
                 contingency,
                 overallBudget,
+                manualAirfareMode,
                 submissionTimestamp: Timestamp.now()
             };
 
@@ -486,15 +519,36 @@ const App = () => {
         const dataToExport = reportFilter === 'All' ? savedRequests : savedRequests.filter(req => req.division === reportFilter);
         if (dataToExport.length === 0) { showNotification(`No data to download for ${reportFilter} division.`, "error"); return; }
         
-        const headers = ['Submitted By', 'Division', 'Departure', 'Destination', 'Fare Class', 'No. of People', 'Target Date', 'Travel Days', 'Overall Budget ($)'];
+        const headers = [
+            'Submitted By', 'Division', 'Purpose', 'Departure', 'Destination', 
+            'Fare Class', 'No. of People', 'Target Date', 'Travel Days', 
+            'Airfare ($)', 'Hotel/Day ($)', 'DMA/Day ($)', 'Total Cost ($)', 
+            'Contingency ($)', 'Overall Budget ($)'
+        ];
+        
         const rows = dataToExport.map(req => [
-                `"${req.submittedBy}"`, `"${req.division}"`, `"${req.departureCity}, ${req.departureCountry}"`, `"${req.city}, ${req.country}"`, `"${req.fareClass}"`, req.numberOfPeople || 1, `"${req.targetDate}"`, req.travelDays, req.overallBudget?.toFixed(2) || '0.00'
-            ].join(','));
+            `"${req.submittedBy}"`,
+            `"${req.division}"`,
+            `"${req.purpose || ''}"`,
+            `"${req.departureCity}, ${req.departureCountry}"`,
+            `"${req.city}, ${req.country}"`,
+            `"${req.fareClass}"`,
+            req.numberOfPeople || 1,
+            `"${req.targetDate}"`,
+            req.travelDays,
+            req.airfare?.toFixed(2) || '0.00',
+            req.hotelFare?.toFixed(2) || '0.00',
+            req.dma?.toFixed(2) || '0.00',
+            req.totalCost?.toFixed(2) || '0.00',
+            req.contingency?.toFixed(2) || '0.00',
+            req.overallBudget?.toFixed(2) || '0.00'
+        ].join(','));
+        
         const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `ctl_travel_budget_report_${reportFilter}.csv`);
+        link.setAttribute("download", `ctl_travel_budget_detailed_report_${reportFilter}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -523,6 +577,42 @@ const App = () => {
                             <div className="space-y-2"><label htmlFor="city" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Destination City</label><select id="city" value={city} onChange={e => setCity(e.target.value)} disabled={!country} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white"><option value="">Select a city...</option>{cities.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                         </div>
                         <div className="space-y-2 mt-5"><label htmlFor="fareClass" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Fare Class</label><select id="fareClass" value={fareClass} onChange={e => setFareClass(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>Business</option><option>Economy</option></select></div>
+                        
+                        {/* Manual Airfare Override Section */}
+                        <div className="mt-5 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="font-medium text-sm text-slate-700 flex items-center">
+                                    <DollarSign className="w-4 h-4 mr-2"/>Manual Airfare Override
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setManualAirfareMode(!manualAirfareMode);
+                                        if (!manualAirfareMode) {
+                                            setManualAirfarePrice('');
+                                        }
+                                    }}
+                                    className="flex items-center text-blue-600 hover:text-blue-800"
+                                >
+                                    {manualAirfareMode ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                                    <span className="ml-1 text-sm">{manualAirfareMode ? 'ON' : 'OFF'}</span>
+                                </button>
+                            </div>
+                            {manualAirfareMode && (
+                                <div className="space-y-2">
+                                    <input
+                                        type="number"
+                                        placeholder="Enter custom airfare price (USD)"
+                                        value={manualAirfarePrice}
+                                        onChange={e => setManualAirfarePrice(e.target.value)}
+                                        className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"
+                                        min="0"
+                                        step="0.01"
+                                    />
+                                    <p className="text-xs text-slate-600">When enabled, this price will be used instead of API-fetched airfare.</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <div className="space-y-2"><label htmlFor="targetAudience" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Target Audience</label><input type="text" id="targetAudience" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div>
@@ -539,7 +629,21 @@ const App = () => {
                 <h2 className="text-2xl font-semibold mb-6 border-b pb-3 text-slate-800">2. Budget Breakdown</h2>
                 <div className={`transition-opacity duration-500 ${isCalculated ? 'opacity-100' : 'opacity-50'}`}>
                     <div className="space-y-4 text-slate-700">
-                        <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg"><span className="font-medium flex items-center"><Plane className="w-5 h-5 mr-3 text-blue-500"/>Average Airfare (per person)</span><div className="flex items-center space-x-2">{airfareLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-bold text-lg text-slate-900">{formatCurrency(airfare)}</span>}{airfareSourceUrl && !airfareLoading && (<a href={airfareSourceUrl} target="_blank" rel="noopener noreferrer" title="Consult Source" className="text-blue-500 hover:text-blue-700"><ExternalLink className="w-4 h-4"/></a>)}</div></div>
+                        <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
+                            <span className="font-medium flex items-center">
+                                <Plane className="w-5 h-5 mr-3 text-blue-500"/>
+                                Airfare (per person)
+                                {manualAirfareMode && <span className="ml-2 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">Manual</span>}
+                            </span>
+                            <div className="flex items-center space-x-2">
+                                {airfareLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-bold text-lg text-slate-900">{formatCurrency(airfare)}</span>}
+                                {airfareSourceUrl && !airfareLoading && !manualAirfareMode && (
+                                    <a href={airfareSourceUrl} target="_blank" rel="noopener noreferrer" title="Consult Source" className="text-blue-500 hover:text-blue-700">
+                                        <ExternalLink className="w-4 h-4"/>
+                                    </a>
+                                )}
+                            </div>
+                        </div>
                         <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
                             <span className="font-medium flex items-center"><Building2 className="w-5 h-5 mr-3 text-blue-500"/>Hotel Fare (per day)</span>
                             <div className="text-right">
@@ -576,7 +680,7 @@ const App = () => {
                         </select>
                     </div>
                     <button onClick={downloadCSV} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-md flex items-center disabled:bg-blue-300" disabled={savedRequests.length === 0}>
-                        <FileDown className="w-5 h-5 mr-2" />Download CSV
+                        <FileDown className="w-5 h-5 mr-2" />Download Detailed CSV
                     </button>
                 </div>
             </div>
@@ -591,6 +695,7 @@ const App = () => {
                                 <th scope="col" className="px-4 py-3">Destination</th>
                                 <th scope="col" className="px-4 py-3">No. of People</th>
                                 <th scope="col" className="px-4 py-3">Fare Class</th>
+                                <th scope="col" className="px-4 py-3">Overall Budget</th>
                                 <th scope="col" className="px-4 py-3 text-right">Actions</th>
                             </tr>
                         </thead>
@@ -602,7 +707,11 @@ const App = () => {
                                     <td className="px-4 py-4">{req.departureCity}, {req.departureCountry}</td>
                                     <td className="px-4 py-4 font-medium text-slate-900">{req.city}, {req.country}</td>
                                     <td className="px-4 py-4">{req.numberOfPeople || 1}</td>
-                                    <td className="px-4 py-4">{req.fareClass}</td>
+                                    <td className="px-4 py-4">
+                                        {req.fareClass}
+                                        {req.manualAirfareMode && <span className="ml-1 text-xs bg-orange-100 text-orange-800 px-1 py-0.5 rounded">Manual</span>}
+                                    </td>
+                                    <td className="px-4 py-4 font-semibold">{formatCurrency(req.overallBudget)}</td>
                                     <td className="px-4 py-4 text-right">
                                         <div className="flex justify-end items-center gap-3">
                                             <button onClick={() => handleEditRequest(req)} className="text-blue-600 hover:text-blue-800" title="Edit"><Edit className="w-4 h-4"/></button>
