@@ -595,45 +595,124 @@ const App = () => {
         try {
             const requestsCollectionPath = `artifacts/${appId}/users/${userId}/travelRequests`;
             
-            const requestData = {
-                submittedBy,
-                division,
-                purpose,
-                departureCity,
-                departureCountry,
-                city,
-                country,
-                fareClass,
-                targetAudience,
-                targetDate,
-                travelDays,
-                numberOfPeople,
-                airfare,
-                hotelFare,
-                dma,
-                secondHotelFare: multiCityMode ? secondHotelFare : null,
-                secondDma: multiCityMode ? secondDma : null,
-                totalCost,
-                contingency,
-                overallBudget,
-                manualAirfareMode,
-                multiCityMode,
-                secondDestinationCountry: multiCityMode ? secondDestinationCountry : null,
-                secondDestinationCity: multiCityMode ? secondDestinationCity : null,
-                secondTravelDays: multiCityMode ? secondTravelDays : null,
-                submissionTimestamp: Timestamp.now()
-            };
+            if (multiCityMode) {
+                // Save two separate records for multi-city trips
+                
+                // Record 1: Origin to First Destination
+                const requestData1 = {
+                    submittedBy,
+                    division,
+                    purpose: `${purpose} (Route 1: ${departureCity} → ${city})`,
+                    departureCity,
+                    departureCountry,
+                    city,
+                    country,
+                    fareClass,
+                    targetAudience,
+                    targetDate,
+                    travelDays,
+                    numberOfPeople,
+                    airfare: airfare / 3, // Airfare split across 3 legs (proportional)
+                    hotelFare,
+                    dma,
+                    secondHotelFare: null,
+                    secondDma: null,
+                    totalCost: ((airfare / 3) + (hotelFare * travelDays) + (dma * travelDays)) * numberOfPeople,
+                    contingency: (((airfare / 3) + (hotelFare * travelDays) + (dma * travelDays)) * numberOfPeople) * 0.05,
+                    overallBudget: (((airfare / 3) + (hotelFare * travelDays) + (dma * travelDays)) * numberOfPeople) * 1.05,
+                    manualAirfareMode,
+                    multiCityMode: true,
+                    multiCityLeg: 1,
+                    secondDestinationCountry: null,
+                    secondDestinationCity: null,
+                    secondTravelDays: null,
+                    submissionTimestamp: Timestamp.now()
+                };
 
-            if (editingRequestId) {
-                // Update existing request
-                const docRef = doc(db, requestsCollectionPath, editingRequestId);
-                await updateDoc(docRef, requestData);
-                showNotification("Request updated successfully.", "success");
-                setEditingRequestId(null);
+                // Record 2: First Destination to Second Destination
+                const requestData2 = {
+                    submittedBy,
+                    division,
+                    purpose: `${purpose} (Route 2: ${city} → ${secondDestinationCity})`,
+                    departureCity: city,
+                    departureCountry: country,
+                    city: secondDestinationCity,
+                    country: secondDestinationCountry,
+                    fareClass,
+                    targetAudience,
+                    targetDate,
+                    travelDays: secondTravelDays,
+                    numberOfPeople,
+                    airfare: (airfare * 2) / 3, // Remaining airfare for routes 2 & 3 (return)
+                    hotelFare: secondHotelFare,
+                    dma: secondDma,
+                    secondHotelFare: null,
+                    secondDma: null,
+                    totalCost: (((airfare * 2) / 3) + (secondHotelFare * secondTravelDays) + (secondDma * secondTravelDays)) * numberOfPeople,
+                    contingency: ((((airfare * 2) / 3) + (secondHotelFare * secondTravelDays) + (secondDma * secondTravelDays)) * numberOfPeople) * 0.05,
+                    overallBudget: ((((airfare * 2) / 3) + (secondHotelFare * secondTravelDays) + (secondDma * secondTravelDays)) * numberOfPeople) * 1.05,
+                    manualAirfareMode,
+                    multiCityMode: true,
+                    multiCityLeg: 2,
+                    secondDestinationCountry: null,
+                    secondDestinationCity: null,
+                    secondTravelDays: null,
+                    submissionTimestamp: Timestamp.now()
+                };
+
+                if (editingRequestId) {
+                    showNotification("Multi-city edits not supported. Please create a new request.", "error");
+                    setIsSaving(false);
+                    return;
+                } else {
+                    // Create both records
+                    await addDoc(collection(db, requestsCollectionPath), requestData1);
+                    await addDoc(collection(db, requestsCollectionPath), requestData2);
+                    showNotification("Multi-city request saved successfully (2 records created).", "success");
+                }
             } else {
-                // Create new request
-                await addDoc(collection(db, requestsCollectionPath), requestData);
-                showNotification("Request saved successfully.", "success");
+                // Single destination - save one record as before
+                const requestData = {
+                    submittedBy,
+                    division,
+                    purpose,
+                    departureCity,
+                    departureCountry,
+                    city,
+                    country,
+                    fareClass,
+                    targetAudience,
+                    targetDate,
+                    travelDays,
+                    numberOfPeople,
+                    airfare,
+                    hotelFare,
+                    dma,
+                    secondHotelFare: null,
+                    secondDma: null,
+                    totalCost,
+                    contingency,
+                    overallBudget,
+                    manualAirfareMode,
+                    multiCityMode: false,
+                    multiCityLeg: null,
+                    secondDestinationCountry: null,
+                    secondDestinationCity: null,
+                    secondTravelDays: null,
+                    submissionTimestamp: Timestamp.now()
+                };
+
+                if (editingRequestId) {
+                    // Update existing request
+                    const docRef = doc(db, requestsCollectionPath, editingRequestId);
+                    await updateDoc(docRef, requestData);
+                    showNotification("Request updated successfully.", "success");
+                    setEditingRequestId(null);
+                } else {
+                    // Create new request
+                    await addDoc(collection(db, requestsCollectionPath), requestData);
+                    showNotification("Request saved successfully.", "success");
+                }
             }
             
             resetForm();
@@ -652,8 +731,8 @@ const App = () => {
         const headers = [
             'Submitted By', 'Division', 'Purpose', 'Departure', 'Destination', 
             'Fare Class', 'No. of Travelers', 'Target Date', 'Mission Days', 
-            'Airfare ($)', 'Hotel/Day Route 1 ($)', 'DMA/Day Route 1 ($)', 
-            'Hotel/Day Route 2 ($)', 'DMA/Day Route 2 ($)', 'Total Cost ($)', 
+            'Airfare ($)', 'Hotel/Day ($)', 'DMA/Day ($)', 
+            'Reserved', 'Reserved', 'Total Cost ($)', 
             'Contingency ($)', 'Overall Budget ($)'
         ];
         
@@ -662,20 +741,16 @@ const App = () => {
             `"${req.division}"`,
             `"${req.purpose || ''}"`,
             `"${req.departureCity}, ${req.departureCountry}"`,
-            req.multiCityMode 
-                ? `"${req.city}, ${req.country} → ${req.secondDestinationCity}, ${req.secondDestinationCountry}"` 
-                : `"${req.city}, ${req.country}"`,
+            `"${req.city}, ${req.country}"`,
             `"${req.fareClass}"`,
             req.numberOfPeople || 1,
             `"${req.targetDate}"`,
-            req.multiCityMode 
-                ? `${req.travelDays} + ${req.secondTravelDays || 0}` 
-                : req.travelDays,
+            req.travelDays,
             req.airfare?.toFixed(2) || '0.00',
             req.hotelFare?.toFixed(2) || '0.00',
             req.dma?.toFixed(2) || '0.00',
-            req.multiCityMode ? (req.secondHotelFare?.toFixed(2) || '0.00') : 'N/A',
-            req.multiCityMode ? (req.secondDma?.toFixed(2) || '0.00') : 'N/A',
+            'N/A',
+            'N/A',
             req.totalCost?.toFixed(2) || '0.00',
             req.contingency?.toFixed(2) || '0.00',
             req.overallBudget?.toFixed(2) || '0.00'
@@ -1203,9 +1278,12 @@ const App = () => {
                                     <td className="px-4 py-4">{req.division}</td>
                                     <td className="px-4 py-4">{req.departureCity}, {req.departureCountry}</td>
                                     <td className="px-4 py-4 font-medium text-slate-900">
-                                        {req.multiCityMode 
-                                            ? `${req.city}, ${req.country} → ${req.secondDestinationCity}, ${req.secondDestinationCountry}` 
-                                            : `${req.city}, ${req.country}`}
+                                        {req.city}, {req.country}
+                                        {req.multiCityMode && req.multiCityLeg && (
+                                            <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-1 py-0.5 rounded">
+                                                Leg {req.multiCityLeg}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-4 py-4">{req.numberOfPeople || 1}</td>
                                     <td className="px-4 py-4">
