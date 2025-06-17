@@ -215,13 +215,10 @@ const App = () => {
     const [manualAirfareMode, setManualAirfareMode] = useState(false);
     const [manualAirfarePrice, setManualAirfarePrice] = useState('');
     
-    // Multi-city State
+    // Multi-city State  
     const [multiCityMode, setMultiCityMode] = useState(false);
-    const [secondDepartureCountry, setSecondDepartureCountry] = useState('');
-    const [secondDepartureCity, setSecondDepartureCity] = useState('');
     const [secondDestinationCountry, setSecondDestinationCountry] = useState('');
     const [secondDestinationCity, setSecondDestinationCity] = useState('');
-    const [secondDepartureCities, setSecondDepartureCities] = useState([]);
     const [secondDestinationCities, setSecondDestinationCities] = useState([]);
     const [secondTravelDays, setSecondTravelDays] = useState(1);
     
@@ -338,18 +335,7 @@ const App = () => {
         }
     }, [departureCountry, editingRequestId]);
 
-    // Multi-city dropdown effects
-    useEffect(() => {
-        if (secondDepartureCountry && hotelData[secondDepartureCountry]) {
-            setSecondDepartureCities(Object.keys(hotelData[secondDepartureCountry]));
-            if(!editingRequestId) {
-                setSecondDepartureCity('');
-            }
-        } else {
-            setSecondDepartureCities([]); setSecondDepartureCity('');
-        }
-    }, [secondDepartureCountry, editingRequestId]);
-    
+    // Multi-city dropdown effect for second destination
     useEffect(() => {
         if (secondDestinationCountry && hotelData[secondDestinationCountry]) {
             setSecondDestinationCities(Object.keys(hotelData[secondDestinationCountry]));
@@ -374,11 +360,8 @@ const App = () => {
         setManualAirfareMode(false);
         setManualAirfarePrice('');
         setMultiCityMode(false);
-        setSecondDepartureCountry('');
-        setSecondDepartureCity('');
         setSecondDestinationCountry('');
         setSecondDestinationCity('');
-        setSecondDepartureCities([]);
         setSecondDestinationCities([]);
         setSecondTravelDays(1);
     };
@@ -391,7 +374,7 @@ const App = () => {
         }
         
         // Multi-city validation
-        if (multiCityMode && (!secondDepartureCountry || !secondDepartureCity || !secondDestinationCountry || !secondDestinationCity || !secondTravelDays || secondTravelDays <= 0)) {
+        if (multiCityMode && (!secondDestinationCountry || !secondDestinationCity || !secondTravelDays || secondTravelDays <= 0)) {
             showNotification("Please fill all multi-city route fields and mission days when multi-city mode is enabled.", 'error');
             return;
         }
@@ -410,7 +393,7 @@ const App = () => {
         setAirfareSourceUrl('');
         
         try {
-            // Calculate hotel and DMA for first destination
+            // Calculate hotel and DMA for first destination (Route 1 destination)
             const hotelInfo1 = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
             setOriginalHotelInfo(hotelInfo1);
             const conversionRate1 = exchangeRates[hotelInfo1.currency] || 1;
@@ -446,7 +429,7 @@ const App = () => {
                 // Fetch airfare from API
                 let totalAirfare = 0;
                 
-                // Route 1: Initial departure to first destination
+                // Route 1: Origin to first destination
                 const destinationCapital1 = countryToCapital[country];
                 const destinationCityForFlight1 = Object.values(countryToCapital).includes(city) ? city : destinationCapital1;
 
@@ -468,14 +451,16 @@ const App = () => {
                     totalAirfare += 1500; // fallback for route 1
                 }
                 
-                // Route 2: Multi-city second leg (if enabled)
+                // Route 2: First destination to second destination (if multi-city)
                 if (multiCityMode) {
                     const destinationCapital2 = countryToCapital[secondDestinationCountry];
                     const destinationCityForFlight2 = Object.values(countryToCapital).includes(secondDestinationCity) ? secondDestinationCity : destinationCapital2;
 
                     if (destinationCityForFlight2) {
                         try {
-                            const response2 = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight2)}&destinationCountry=${encodeURIComponent(secondDestinationCountry)}&departureCity=${encodeURIComponent(secondDepartureCity)}&departureCountry=${encodeURIComponent(secondDepartureCountry)}&targetDate=${targetDate}&travelDays=${secondTravelDays}&fareClass=${fareClass}`);
+                            // Route 1 destination becomes Route 2 departure
+                            const route2DepartureCity = Object.values(countryToCapital).includes(city) ? city : destinationCapital1;
+                            const response2 = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight2)}&destinationCountry=${encodeURIComponent(secondDestinationCountry)}&departureCity=${encodeURIComponent(route2DepartureCity)}&departureCountry=${encodeURIComponent(country)}&targetDate=${targetDate}&travelDays=${secondTravelDays}&fareClass=${fareClass}`);
                             const data2 = await response2.json();
 
                             if (!data2.error) {
@@ -489,6 +474,21 @@ const App = () => {
                         }
                     } else {
                         totalAirfare += 1500; // fallback for route 2
+                    }
+                    
+                    // Route 3: Return journey (second destination back to origin)
+                    try {
+                        const response3 = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(departureCity)}&destinationCountry=${encodeURIComponent(departureCountry)}&departureCity=${encodeURIComponent(destinationCityForFlight2)}&departureCountry=${encodeURIComponent(secondDestinationCountry)}&targetDate=${targetDate}&travelDays=1&fareClass=${fareClass}`);
+                        const data3 = await response3.json();
+
+                        if (!data3.error) {
+                            totalAirfare += data3.price;
+                        } else {
+                            totalAirfare += 1500; // fallback for return
+                        }
+                    } catch (apiError) {
+                        console.error("Airfare API Error for return journey:", apiError);
+                        totalAirfare += 1500; // fallback for return
                     }
                 }
                 
@@ -521,7 +521,7 @@ const App = () => {
         } finally {
             setAirfareLoading(false);
         }
-    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, manualAirfareMode, manualAirfarePrice, multiCityMode, secondDepartureCountry, secondDepartureCity, secondDestinationCountry, secondDestinationCity, secondTravelDays, showNotification]);
+    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, manualAirfareMode, manualAirfarePrice, multiCityMode, secondDestinationCountry, secondDestinationCity, secondTravelDays, showNotification]);
 
     const handleDeleteRequest = async (id) => {
         if (!db || !userId) { showNotification("Database not connected. Cannot delete.", "error"); return; }
@@ -564,15 +564,11 @@ const App = () => {
         // Handle multi-city data
         if (request.multiCityMode) {
             setMultiCityMode(true);
-            setSecondDepartureCountry(request.secondDepartureCountry || '');
-            setSecondDepartureCity(request.secondDepartureCity || '');
             setSecondDestinationCountry(request.secondDestinationCountry || '');
             setSecondDestinationCity(request.secondDestinationCity || '');
             setSecondTravelDays(request.secondTravelDays || 1);
         } else {
             setMultiCityMode(false);
-            setSecondDepartureCountry('');
-            setSecondDepartureCity('');
             setSecondDestinationCountry('');
             setSecondDestinationCity('');
             setSecondTravelDays(1);
@@ -622,8 +618,6 @@ const App = () => {
                 overallBudget,
                 manualAirfareMode,
                 multiCityMode,
-                secondDepartureCountry: multiCityMode ? secondDepartureCountry : null,
-                secondDepartureCity: multiCityMode ? secondDepartureCity : null,
                 secondDestinationCountry: multiCityMode ? secondDestinationCountry : null,
                 secondDestinationCity: multiCityMode ? secondDestinationCity : null,
                 secondTravelDays: multiCityMode ? secondTravelDays : null,
@@ -769,10 +763,10 @@ const App = () => {
                                     <p className="text-slate-600 text-sm mb-2">Enable for complex itineraries with multiple destinations:</p>
                                     <ul className="text-slate-600 text-sm space-y-1 ml-4">
                                         <li>• <span className="font-semibold">OFF:</span> Standard round-trip calculation</li>
-                                        <li>• <span className="font-semibold">ON:</span> Add one additional route segment</li>
+                                        <li>• <span className="font-semibold">ON:</span> Route-based itinerary (Origin → Dest1 → Dest2 → Origin)</li>
+                                        <li>• Hotel/DMA calculated only for destinations (not return leg)</li>
                                         <li>• Separate mission days for each destination</li>
-                                        <li>• Hotel/DMA calculated separately for each destination</li>
-                                        <li>• Airfare combines both route segments</li>
+                                        <li>• Airfare includes all route segments</li>
                                         <li>• Multi-city trips are marked with purple "Multi-city" badges</li>
                                     </ul>
                                 </div>
@@ -902,16 +896,153 @@ const App = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="submittedBy" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Submitted by/User</label><input type="text" id="submittedBy" value={submittedBy} onChange={e => setSubmittedBy(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="division" className="font-medium text-sm text-slate-700 flex items-center"><Building2 className="w-4 h-4 mr-2"/>Division</label><select id="division" value={division} onChange={e => setDivision(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>CTLA</option> <option>CTFA</option> <option>CTOC</option> <option>CTAC</option></select></div></div>
                     <div className="space-y-2"><label htmlFor="purpose" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Purpose/Event Description</label><textarea id="purpose" value={purpose} onChange={e => setPurpose(e.target.value)} rows="3" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"></textarea></div>
                     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                        <h3 className="text-lg font-semibold mb-3 text-slate-700">Flight Details</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <div className="space-y-2"><label htmlFor="departureCountry" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Departure Country</label><select id="departureCountry" value={departureCountry} onChange={e => setDepartureCountry(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option value="">Select a country...</option>{Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                            <div className="space-y-2"><label htmlFor="departureCity" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Departure City</label><select id="departureCity" value={departureCity} onChange={e => setDepartureCity(e.target.value)} disabled={!departureCountry} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white"><option value="">Select a city...</option>{departureCities.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-700">Flight Details</h3>
+                            <div className="flex items-center">
+                                <label className="font-medium text-sm text-slate-700 flex items-center mr-3">
+                                    <MapPin className="w-4 h-4 mr-2"/>Multi-city Trip
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setMultiCityMode(!multiCityMode);
+                                        if (!multiCityMode) {
+                                            setSecondDestinationCountry('');
+                                            setSecondDestinationCity('');
+                                            setSecondTravelDays(1);
+                                        }
+                                    }}
+                                    className="flex items-center text-purple-600 hover:text-purple-800"
+                                >
+                                    {multiCityMode ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                                    <span className="ml-1 text-sm">{multiCityMode ? 'ON' : 'OFF'}</span>
+                                </button>
+                            </div>
                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
-                            <div className="space-y-2"><label htmlFor="country" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Destination Country</label><select id="country" value={country} onChange={e => setCountry(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option value="">Select a country...</option>{Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                            <div className="space-y-2"><label htmlFor="city" className="font-medium text-sm text-slate-700 flex items-center"><MapPin className="w-4 h-4 mr-2"/>Destination City</label><select id="city" value={city} onChange={e => setCity(e.target.value)} disabled={!country} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white"><option value="">Select a city...</option>{cities.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                        
+                        {/* Route 1: Origin to First Destination */}
+                        <div className="space-y-4">
+                            <div className="bg-white p-4 rounded-lg border border-slate-200">
+                                <h4 className="font-medium text-blue-700 text-sm mb-3">Route 1: Origin → First Destination</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label htmlFor="departureCountry" className="font-medium text-xs text-slate-600">From Country</label>
+                                        <select id="departureCountry" value={departureCountry} onChange={e => setDepartureCountry(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white text-sm">
+                                            <option value="">Select country...</option>
+                                            {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label htmlFor="departureCity" className="font-medium text-xs text-slate-600">From City</label>
+                                        <select id="departureCity" value={departureCity} onChange={e => setDepartureCity(e.target.value)} disabled={!departureCountry} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white text-sm">
+                                            <option value="">Select city...</option>
+                                            {departureCities.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                    <div className="space-y-2">
+                                        <label htmlFor="country" className="font-medium text-xs text-slate-600">To Country</label>
+                                        <select id="country" value={country} onChange={e => setCountry(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white text-sm">
+                                            <option value="">Select country...</option>
+                                            {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label htmlFor="city" className="font-medium text-xs text-slate-600">To City</label>
+                                        <select id="city" value={city} onChange={e => setCity(e.target.value)} disabled={!country} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition disabled:bg-slate-100 bg-white text-sm">
+                                            <option value="">Select city...</option>
+                                            {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="mt-4">
+                                    <label className="font-medium text-xs text-slate-600">Mission Days at Destination 1</label>
+                                    <input 
+                                        type="number" 
+                                        value={travelDays} 
+                                        min="1" 
+                                        onChange={e => setTravelDays(Number(e.target.value))} 
+                                        className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition text-sm mt-1"
+                                    />
+                                </div>
+                            </div>
+                            
+                            {/* Route 2: Multi-city Second Leg */}
+                            {multiCityMode && (
+                                <div className="bg-white p-4 rounded-lg border border-purple-200">
+                                    <h4 className="font-medium text-purple-700 text-sm mb-3">Route 2: First Destination → Second Destination</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">From (Auto-filled)</label>
+                                            <input 
+                                                type="text" 
+                                                value={city && country ? `${city}, ${country}` : 'Select Route 1 destination first'} 
+                                                disabled 
+                                                className="w-full p-2 border border-slate-300 rounded-lg bg-slate-100 text-slate-500 text-sm"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">To Country</label>
+                                            <select 
+                                                value={secondDestinationCountry} 
+                                                onChange={e => setSecondDestinationCountry(e.target.value)} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition bg-white text-sm"
+                                            >
+                                                <option value="">Select country...</option>
+                                                {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">To City</label>
+                                            <select 
+                                                value={secondDestinationCity} 
+                                                onChange={e => setSecondDestinationCity(e.target.value)} 
+                                                disabled={!secondDestinationCountry} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition disabled:bg-slate-100 bg-white text-sm"
+                                            >
+                                                <option value="">Select city...</option>
+                                                {secondDestinationCities.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Mission Days at Destination 2</label>
+                                            <input 
+                                                type="number" 
+                                                value={secondTravelDays} 
+                                                min="1" 
+                                                onChange={e => setSecondTravelDays(Number(e.target.value))} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Return Journey Info */}
+                            {multiCityMode && secondDestinationCity && secondDestinationCountry && (
+                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                    <h4 className="font-medium text-gray-600 text-sm mb-2">Return Journey (Included in Airfare)</h4>
+                                    <p className="text-xs text-gray-500">
+                                        {secondDestinationCity}, {secondDestinationCountry} → {departureCity}, {departureCountry}
+                                        <br />
+                                        <span className="italic">No additional hotel/DMA costs for return travel</span>
+                                    </p>
+                                </div>
+                            )}
                         </div>
-                        <div className="space-y-2 mt-5"><label htmlFor="fareClass" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Fare Class</label><select id="fareClass" value={fareClass} onChange={e => setFareClass(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white"><option>Business</option><option>Economy</option></select></div>
+                        
+                        <div className="space-y-2 mt-5">
+                            <label htmlFor="fareClass" className="font-medium text-sm text-slate-700 flex items-center">
+                                <Briefcase className="w-4 h-4 mr-2"/>Fare Class
+                            </label>
+                            <select id="fareClass" value={fareClass} onChange={e => setFareClass(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition bg-white">
+                                <option>Business</option>
+                                <option>Economy</option>
+                            </select>
+                        </div>
                         
                         {/* Manual Airfare Override Section */}
                         <div className="mt-5 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -945,113 +1076,6 @@ const App = () => {
                                         step="0.01"
                                     />
                                     <p className="text-xs text-slate-600">When enabled, this price will be used instead of API-fetched airfare.</p>
-                                </div>
-                            )}
-                        </div>
-                        
-                        {/* Multi-city Toggle Section */}
-                        <div className="mt-5 p-3 bg-purple-50 rounded-lg border border-purple-200">
-                            <div className="flex items-center justify-between mb-3">
-                                <label className="font-medium text-sm text-slate-700 flex items-center">
-                                    <MapPin className="w-4 h-4 mr-2"/>Multi-city Trip
-                                </label>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setMultiCityMode(!multiCityMode);
-                                        if (!multiCityMode) {
-                                            setSecondDepartureCountry('');
-                                            setSecondDepartureCity('');
-                                            setSecondDestinationCountry('');
-                                            setSecondDestinationCity('');
-                                            setSecondTravelDays(1);
-                                        }
-                                    }}
-                                    className="flex items-center text-purple-600 hover:text-purple-800"
-                                >
-                                    {multiCityMode ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                                    <span className="ml-1 text-sm">{multiCityMode ? 'ON' : 'OFF'}</span>
-                                </button>
-                            </div>
-                            {multiCityMode && (
-                                <div className="space-y-4 mt-4">
-                                    <p className="text-xs text-slate-600">Add one additional route for complex itineraries with multiple destinations.</p>
-                                    <h4 className="font-medium text-purple-700 text-sm">Route 2: Additional Segment</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="font-medium text-xs text-slate-600">Second Departure Country</label>
-                                            <select 
-                                                value={secondDepartureCountry} 
-                                                onChange={e => setSecondDepartureCountry(e.target.value)} 
-                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition bg-white text-sm"
-                                            >
-                                                <option value="">Select country...</option>
-                                                {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="font-medium text-xs text-slate-600">Second Departure City</label>
-                                            <select 
-                                                value={secondDepartureCity} 
-                                                onChange={e => setSecondDepartureCity(e.target.value)} 
-                                                disabled={!secondDepartureCountry} 
-                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition disabled:bg-slate-100 bg-white text-sm"
-                                            >
-                                                <option value="">Select city...</option>
-                                                {secondDepartureCities.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="font-medium text-xs text-slate-600">Final Destination Country</label>
-                                            <select 
-                                                value={secondDestinationCountry} 
-                                                onChange={e => setSecondDestinationCountry(e.target.value)} 
-                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition bg-white text-sm"
-                                            >
-                                                <option value="">Select country...</option>
-                                                {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="font-medium text-xs text-slate-600">Final Destination City</label>
-                                            <select 
-                                                value={secondDestinationCity} 
-                                                onChange={e => setSecondDestinationCity(e.target.value)} 
-                                                disabled={!secondDestinationCountry} 
-                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition disabled:bg-slate-100 bg-white text-sm"
-                                            >
-                                                <option value="">Select city...</option>
-                                                {secondDestinationCities.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="font-medium text-xs text-slate-600">Route 1 Mission Days</label>
-                                            <input 
-                                                type="number" 
-                                                value={travelDays} 
-                                                min="1" 
-                                                onChange={e => setTravelDays(Number(e.target.value))} 
-                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition text-sm"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="font-medium text-xs text-slate-600">Route 2 Mission Days</label>
-                                            <input 
-                                                type="number" 
-                                                value={secondTravelDays} 
-                                                min="1" 
-                                                onChange={e => setSecondTravelDays(Number(e.target.value))} 
-                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="bg-purple-100 border border-purple-200 rounded-lg p-3">
-                                        <p className="text-purple-800 text-xs"><span className="font-semibold">💡 Note:</span> Hotel rates and DMA will be calculated separately for each destination based on their respective mission days. Airfare will include both route segments.</p>
-                                    </div>
                                 </div>
                             )}
                         </div>
