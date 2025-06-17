@@ -215,11 +215,24 @@ const App = () => {
     const [manualAirfareMode, setManualAirfareMode] = useState(false);
     const [manualAirfarePrice, setManualAirfarePrice] = useState('');
     
+    // Multi-city State
+    const [multiCityMode, setMultiCityMode] = useState(false);
+    const [secondDepartureCountry, setSecondDepartureCountry] = useState('');
+    const [secondDepartureCity, setSecondDepartureCity] = useState('');
+    const [secondDestinationCountry, setSecondDestinationCountry] = useState('');
+    const [secondDestinationCity, setSecondDestinationCity] = useState('');
+    const [secondDepartureCities, setSecondDepartureCities] = useState([]);
+    const [secondDestinationCities, setSecondDestinationCities] = useState([]);
+    const [secondTravelDays, setSecondTravelDays] = useState(1);
+    
     // Calculation State
     const [airfare, setAirfare] = useState(null);
     const [hotelFare, setHotelFare] = useState(null);
     const [originalHotelInfo, setOriginalHotelInfo] = useState(null);
+    const [secondHotelFare, setSecondHotelFare] = useState(null);
+    const [secondOriginalHotelInfo, setSecondOriginalHotelInfo] = useState(null);
     const [dma, setDma] = useState(null);
+    const [secondDma, setSecondDma] = useState(null);
     const [totalCost, setTotalCost] = useState(null);
     const [contingency, setContingency] = useState(null);
     const [overallBudget, setOverallBudget] = useState(null);
@@ -325,8 +338,31 @@ const App = () => {
         }
     }, [departureCountry, editingRequestId]);
 
+    // Multi-city dropdown effects
+    useEffect(() => {
+        if (secondDepartureCountry && hotelData[secondDepartureCountry]) {
+            setSecondDepartureCities(Object.keys(hotelData[secondDepartureCountry]));
+            if(!editingRequestId) {
+                setSecondDepartureCity('');
+            }
+        } else {
+            setSecondDepartureCities([]); setSecondDepartureCity('');
+        }
+    }, [secondDepartureCountry, editingRequestId]);
+    
+    useEffect(() => {
+        if (secondDestinationCountry && hotelData[secondDestinationCountry]) {
+            setSecondDestinationCities(Object.keys(hotelData[secondDestinationCountry]));
+            if(!editingRequestId) {
+                setSecondDestinationCity('');
+            }
+        } else {
+            setSecondDestinationCities([]); setSecondDestinationCity('');
+        }
+    }, [secondDestinationCountry, editingRequestId]);
+
     const clearResults = () => {
-        setIsCalculated(false); setAirfare(null); setHotelFare(null); setOriginalHotelInfo(null); setDma(null); setTotalCost(null); setContingency(null); setOverallBudget(null); setAirfareSourceUrl('');
+        setIsCalculated(false); setAirfare(null); setHotelFare(null); setOriginalHotelInfo(null); setSecondHotelFare(null); setSecondOriginalHotelInfo(null); setDma(null); setSecondDma(null); setTotalCost(null); setContingency(null); setOverallBudget(null); setAirfareSourceUrl('');
     };
 
     const resetForm = () => {
@@ -337,11 +373,26 @@ const App = () => {
         setEditingRequestId(null);
         setManualAirfareMode(false);
         setManualAirfarePrice('');
+        setMultiCityMode(false);
+        setSecondDepartureCountry('');
+        setSecondDepartureCity('');
+        setSecondDestinationCountry('');
+        setSecondDestinationCity('');
+        setSecondDepartureCities([]);
+        setSecondDestinationCities([]);
+        setSecondTravelDays(1);
     };
 
     const calculateBudget = useCallback(async () => {
+        // Basic validation
         if (!country || !city || !departureCountry || !departureCity || !travelDays || !targetDate || travelDays <= 0 || numberOfPeople <= 0) {
             showNotification("Please fill all travel detail fields, including dates and locations.", 'error'); 
+            return;
+        }
+        
+        // Multi-city validation
+        if (multiCityMode && (!secondDepartureCountry || !secondDepartureCity || !secondDestinationCountry || !secondDestinationCity || !secondTravelDays || secondTravelDays <= 0)) {
+            showNotification("Please fill all multi-city route fields and mission days when multi-city mode is enabled.", 'error');
             return;
         }
         
@@ -359,14 +410,31 @@ const App = () => {
         setAirfareSourceUrl('');
         
         try {
-            const hotelInfo = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
-            setOriginalHotelInfo(hotelInfo);
-            const conversionRate = exchangeRates[hotelInfo.currency] || 1;
-            const convertedHotelFare = hotelInfo.rate * conversionRate;
-            setHotelFare(convertedHotelFare);
-
-            const selectedDma = dmaData[country] || 0; 
-            setDma(selectedDma);
+            // Calculate hotel and DMA for first destination
+            const hotelInfo1 = hotelData[country]?.[city] || { rate: 0, currency: 'USD' };
+            setOriginalHotelInfo(hotelInfo1);
+            const conversionRate1 = exchangeRates[hotelInfo1.currency] || 1;
+            const convertedHotelFare1 = hotelInfo1.rate * conversionRate1;
+            setHotelFare(convertedHotelFare1);
+            const selectedDma1 = dmaData[country] || 0; 
+            setDma(selectedDma1);
+            
+            // Calculate hotel and DMA for second destination (if multi-city)
+            let convertedHotelFare2 = 0;
+            let selectedDma2 = 0;
+            if (multiCityMode) {
+                const hotelInfo2 = hotelData[secondDestinationCountry]?.[secondDestinationCity] || { rate: 0, currency: 'USD' };
+                setSecondOriginalHotelInfo(hotelInfo2);
+                const conversionRate2 = exchangeRates[hotelInfo2.currency] || 1;
+                convertedHotelFare2 = hotelInfo2.rate * conversionRate2;
+                setSecondHotelFare(convertedHotelFare2);
+                selectedDma2 = dmaData[secondDestinationCountry] || 0;
+                setSecondDma(selectedDma2);
+            } else {
+                setSecondHotelFare(null);
+                setSecondOriginalHotelInfo(null);
+                setSecondDma(null);
+            }
 
             let fetchedAirfare;
             
@@ -376,30 +444,72 @@ const App = () => {
                 setAirfare(fetchedAirfare);
             } else {
                 // Fetch airfare from API
-                const destinationCapital = countryToCapital[country];
-                const destinationCityForFlight = Object.values(countryToCapital).includes(city) ? city : destinationCapital;
+                let totalAirfare = 0;
+                
+                // Route 1: Initial departure to first destination
+                const destinationCapital1 = countryToCapital[country];
+                const destinationCityForFlight1 = Object.values(countryToCapital).includes(city) ? city : destinationCapital1;
 
-                fetchedAirfare = 1500;
-                if (destinationCityForFlight) {
+                if (destinationCityForFlight1) {
                     try {
-                        const response = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight)}&destinationCountry=${encodeURIComponent(country)}&departureCity=${encodeURIComponent(departureCity)}&departureCountry=${encodeURIComponent(departureCountry)}&targetDate=${targetDate}&travelDays=${travelDays}&fareClass=${fareClass}`);
-                        const data = await response.json();
+                        const response1 = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight1)}&destinationCountry=${encodeURIComponent(country)}&departureCity=${encodeURIComponent(departureCity)}&departureCountry=${encodeURIComponent(departureCountry)}&targetDate=${targetDate}&travelDays=${travelDays}&fareClass=${fareClass}`);
+                        const data1 = await response1.json();
 
-                        if (data.error) throw new Error(data.message);
-                        fetchedAirfare = data.price;
-                        const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureCity}%20to%20${encodeURIComponent(destinationCityForFlight)}`;
-                        setAirfareSourceUrl(url);
-
+                        if (!data1.error) {
+                            totalAirfare += data1.price;
+                        } else {
+                            totalAirfare += 1500; // fallback for route 1
+                        }
                     } catch (apiError) {
-                        console.error("Airfare API Error:", apiError);
-                        showNotification(`Could not fetch airfare: ${apiError.message}. Using default.`, 'error');
-                        fetchedAirfare = 1500;
+                        console.error("Airfare API Error for route 1:", apiError);
+                        totalAirfare += 1500; // fallback for route 1
+                    }
+                } else {
+                    totalAirfare += 1500; // fallback for route 1
+                }
+                
+                // Route 2: Multi-city second leg (if enabled)
+                if (multiCityMode) {
+                    const destinationCapital2 = countryToCapital[secondDestinationCountry];
+                    const destinationCityForFlight2 = Object.values(countryToCapital).includes(secondDestinationCity) ? secondDestinationCity : destinationCapital2;
+
+                    if (destinationCityForFlight2) {
+                        try {
+                            const response2 = await fetch(`/api/getAirfare?destinationCity=${encodeURIComponent(destinationCityForFlight2)}&destinationCountry=${encodeURIComponent(secondDestinationCountry)}&departureCity=${encodeURIComponent(secondDepartureCity)}&departureCountry=${encodeURIComponent(secondDepartureCountry)}&targetDate=${targetDate}&travelDays=${secondTravelDays}&fareClass=${fareClass}`);
+                            const data2 = await response2.json();
+
+                            if (!data2.error) {
+                                totalAirfare += data2.price;
+                            } else {
+                                totalAirfare += 1500; // fallback for route 2
+                            }
+                        } catch (apiError) {
+                            console.error("Airfare API Error for route 2:", apiError);
+                            totalAirfare += 1500; // fallback for route 2
+                        }
+                    } else {
+                        totalAirfare += 1500; // fallback for route 2
                     }
                 }
+                
+                fetchedAirfare = totalAirfare;
+                
+                // Set source URL for Google Flights
+                if (multiCityMode) {
+                    const url = `https://www.google.com/travel/flights?q=Multi-city%20from%20${departureCity}%20to%20${encodeURIComponent(secondDestinationCity)}`;
+                    setAirfareSourceUrl(url);
+                } else {
+                    const url = `https://www.google.com/travel/flights?q=Flights%20from%20${departureCity}%20to%20${encodeURIComponent(destinationCityForFlight1)}`;
+                    setAirfareSourceUrl(url);
+                }
+                
                 setAirfare(fetchedAirfare);
             }
             
-            const perPersonCost = fetchedAirfare + (convertedHotelFare * travelDays) + (selectedDma * travelDays);
+            // Calculate total cost with separate hotel/DMA for each destination
+            const destination1Cost = (convertedHotelFare1 * travelDays) + (selectedDma1 * travelDays);
+            const destination2Cost = multiCityMode ? (convertedHotelFare2 * secondTravelDays) + (selectedDma2 * secondTravelDays) : 0;
+            const perPersonCost = fetchedAirfare + destination1Cost + destination2Cost;
             const total = perPersonCost * numberOfPeople;
             const cont = total * 0.05;
             setTotalCost(total); 
@@ -411,7 +521,7 @@ const App = () => {
         } finally {
             setAirfareLoading(false);
         }
-    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, manualAirfareMode, manualAirfarePrice, showNotification]);
+    }, [country, city, departureCountry, departureCity, travelDays, targetDate, exchangeRates, fareClass, numberOfPeople, manualAirfareMode, manualAirfarePrice, multiCityMode, secondDepartureCountry, secondDepartureCity, secondDestinationCountry, secondDestinationCity, secondTravelDays, showNotification]);
 
     const handleDeleteRequest = async (id) => {
         if (!db || !userId) { showNotification("Database not connected. Cannot delete.", "error"); return; }
@@ -451,6 +561,23 @@ const App = () => {
             setManualAirfarePrice('');
         }
         
+        // Handle multi-city data
+        if (request.multiCityMode) {
+            setMultiCityMode(true);
+            setSecondDepartureCountry(request.secondDepartureCountry || '');
+            setSecondDepartureCity(request.secondDepartureCity || '');
+            setSecondDestinationCountry(request.secondDestinationCountry || '');
+            setSecondDestinationCity(request.secondDestinationCity || '');
+            setSecondTravelDays(request.secondTravelDays || 1);
+        } else {
+            setMultiCityMode(false);
+            setSecondDepartureCountry('');
+            setSecondDepartureCity('');
+            setSecondDestinationCountry('');
+            setSecondDestinationCity('');
+            setSecondTravelDays(1);
+        }
+        
         setEditingRequestId(request.id);
         setView('calculator');
         showNotification("Now editing a saved request. Click Update Request when finished.", "success");
@@ -488,10 +615,18 @@ const App = () => {
                 airfare,
                 hotelFare,
                 dma,
+                secondHotelFare: multiCityMode ? secondHotelFare : null,
+                secondDma: multiCityMode ? secondDma : null,
                 totalCost,
                 contingency,
                 overallBudget,
                 manualAirfareMode,
+                multiCityMode,
+                secondDepartureCountry: multiCityMode ? secondDepartureCountry : null,
+                secondDepartureCity: multiCityMode ? secondDepartureCity : null,
+                secondDestinationCountry: multiCityMode ? secondDestinationCountry : null,
+                secondDestinationCity: multiCityMode ? secondDestinationCity : null,
+                secondTravelDays: multiCityMode ? secondTravelDays : null,
                 submissionTimestamp: Timestamp.now()
             };
 
@@ -522,8 +657,9 @@ const App = () => {
         
         const headers = [
             'Submitted By', 'Division', 'Purpose', 'Departure', 'Destination', 
-            'Fare Class', 'No. of People', 'Target Date', 'Travel Days', 
-            'Airfare ($)', 'Hotel/Day ($)', 'DMA/Day ($)', 'Total Cost ($)', 
+            'Fare Class', 'No. of Travelers', 'Target Date', 'Mission Days', 
+            'Airfare ($)', 'Hotel/Day Route 1 ($)', 'DMA/Day Route 1 ($)', 
+            'Hotel/Day Route 2 ($)', 'DMA/Day Route 2 ($)', 'Total Cost ($)', 
             'Contingency ($)', 'Overall Budget ($)'
         ];
         
@@ -532,14 +668,20 @@ const App = () => {
             `"${req.division}"`,
             `"${req.purpose || ''}"`,
             `"${req.departureCity}, ${req.departureCountry}"`,
-            `"${req.city}, ${req.country}"`,
+            req.multiCityMode 
+                ? `"${req.city}, ${req.country} → ${req.secondDestinationCity}, ${req.secondDestinationCountry}"` 
+                : `"${req.city}, ${req.country}"`,
             `"${req.fareClass}"`,
             req.numberOfPeople || 1,
             `"${req.targetDate}"`,
-            req.travelDays,
+            req.multiCityMode 
+                ? `${req.travelDays} + ${req.secondTravelDays || 0}` 
+                : req.travelDays,
             req.airfare?.toFixed(2) || '0.00',
             req.hotelFare?.toFixed(2) || '0.00',
             req.dma?.toFixed(2) || '0.00',
+            req.multiCityMode ? (req.secondHotelFare?.toFixed(2) || '0.00') : 'N/A',
+            req.multiCityMode ? (req.secondDma?.toFixed(2) || '0.00') : 'N/A',
             req.totalCost?.toFixed(2) || '0.00',
             req.contingency?.toFixed(2) || '0.00',
             req.overallBudget?.toFixed(2) || '0.00'
@@ -621,6 +763,19 @@ const App = () => {
                                         <li>• Manual entries are marked with orange "Manual" badges</li>
                                     </ul>
                                 </div>
+                                
+                                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                    <h4 className="font-semibold text-purple-600 mb-2">🗺️ Multi-city Trip</h4>
+                                    <p className="text-slate-600 text-sm mb-2">Enable for complex itineraries with multiple destinations:</p>
+                                    <ul className="text-slate-600 text-sm space-y-1 ml-4">
+                                        <li>• <span className="font-semibold">OFF:</span> Standard round-trip calculation</li>
+                                        <li>• <span className="font-semibold">ON:</span> Add one additional route segment</li>
+                                        <li>• Separate mission days for each destination</li>
+                                        <li>• Hotel/DMA calculated separately for each destination</li>
+                                        <li>• Airfare combines both route segments</li>
+                                        <li>• Multi-city trips are marked with purple "Multi-city" badges</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                         
@@ -635,21 +790,21 @@ const App = () => {
                                 <div className="bg-white rounded-lg p-4 border border-slate-200">
                                     <h4 className="font-semibold text-blue-600 mb-2">👥 Attendee Information</h4>
                                     <p className="text-slate-600 text-sm mb-1"><span className="font-semibold text-green-600">Target Audience:</span> Optional - describe who will attend</p>
-                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Number of People:</span> Total travelers (affects final budget)</p>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Number of Travelers:</span> Total travelers (affects final budget)</p>
                                 </div>
                                 
                                 <div className="bg-white rounded-lg p-4 border border-slate-200">
                                     <h4 className="font-semibold text-blue-600 mb-2">📅 Schedule Information</h4>
                                     <p className="text-slate-600 text-sm mb-1"><span className="font-semibold text-red-600">Target Date:</span> Departure date (affects airfare pricing)</p>
-                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Travel Days:</span> Total days (affects hotel and DMA costs)</p>
+                                    <p className="text-slate-600 text-sm"><span className="font-semibold text-red-600">Mission Days:</span> Total days (affects hotel and DMA costs)</p>
                                 </div>
                                 
                                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                                     <p className="text-yellow-800 text-sm font-semibold mb-2">📊 Cost Calculation Notes:</p>
                                     <ul className="text-yellow-800 text-sm space-y-1 ml-4">
-                                        <li>• Hotel rates: per day × travel days</li>
-                                        <li>• DMA (Daily Meal Allowance): per day × travel days</li>
-                                        <li>• All costs multiplied by number of people</li>
+                                        <li>• Hotel rates: per day × mission days (calculated separately for multi-city)</li>
+                                        <li>• DMA (Daily Meal Allowance): per day × mission days (calculated separately for multi-city)</li>
+                                        <li>• All costs multiplied by number of travelers</li>
                                         <li>• 5% contingency automatically added</li>
                                     </ul>
                                 </div>
@@ -707,7 +862,7 @@ const App = () => {
                                 <div className="bg-white rounded-lg p-4 border border-slate-200">
                                     <h4 className="font-semibold text-blue-600 mb-2">📈 Final Calculations</h4>
                                     <div className="text-slate-600 text-sm space-y-1">
-                                        <p><span className="font-semibold">Total Cost:</span> (Airfare + Hotel×Days + DMA×Days) × People</p>
+                                        <p><span className="font-semibold">Total Cost:</span> (Airfare + Hotel×Days + DMA×Days) × Travelers</p>
                                         <p><span className="font-semibold">Contingency:</span> 5% buffer added to total</p>
                                         <p><span className="font-semibold">Overall Budget:</span> Total Cost + Contingency</p>
                                     </div>
@@ -793,10 +948,117 @@ const App = () => {
                                 </div>
                             )}
                         </div>
+                        
+                        {/* Multi-city Toggle Section */}
+                        <div className="mt-5 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="font-medium text-sm text-slate-700 flex items-center">
+                                    <MapPin className="w-4 h-4 mr-2"/>Multi-city Trip
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setMultiCityMode(!multiCityMode);
+                                        if (!multiCityMode) {
+                                            setSecondDepartureCountry('');
+                                            setSecondDepartureCity('');
+                                            setSecondDestinationCountry('');
+                                            setSecondDestinationCity('');
+                                            setSecondTravelDays(1);
+                                        }
+                                    }}
+                                    className="flex items-center text-purple-600 hover:text-purple-800"
+                                >
+                                    {multiCityMode ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                                    <span className="ml-1 text-sm">{multiCityMode ? 'ON' : 'OFF'}</span>
+                                </button>
+                            </div>
+                            {multiCityMode && (
+                                <div className="space-y-4 mt-4">
+                                    <p className="text-xs text-slate-600">Add one additional route for complex itineraries with multiple destinations.</p>
+                                    <h4 className="font-medium text-purple-700 text-sm">Route 2: Additional Segment</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Second Departure Country</label>
+                                            <select 
+                                                value={secondDepartureCountry} 
+                                                onChange={e => setSecondDepartureCountry(e.target.value)} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition bg-white text-sm"
+                                            >
+                                                <option value="">Select country...</option>
+                                                {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Second Departure City</label>
+                                            <select 
+                                                value={secondDepartureCity} 
+                                                onChange={e => setSecondDepartureCity(e.target.value)} 
+                                                disabled={!secondDepartureCountry} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition disabled:bg-slate-100 bg-white text-sm"
+                                            >
+                                                <option value="">Select city...</option>
+                                                {secondDepartureCities.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Final Destination Country</label>
+                                            <select 
+                                                value={secondDestinationCountry} 
+                                                onChange={e => setSecondDestinationCountry(e.target.value)} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition bg-white text-sm"
+                                            >
+                                                <option value="">Select country...</option>
+                                                {Object.keys(hotelData).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Final Destination City</label>
+                                            <select 
+                                                value={secondDestinationCity} 
+                                                onChange={e => setSecondDestinationCity(e.target.value)} 
+                                                disabled={!secondDestinationCountry} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition disabled:bg-slate-100 bg-white text-sm"
+                                            >
+                                                <option value="">Select city...</option>
+                                                {secondDestinationCities.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Route 1 Mission Days</label>
+                                            <input 
+                                                type="number" 
+                                                value={travelDays} 
+                                                min="1" 
+                                                onChange={e => setTravelDays(Number(e.target.value))} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition text-sm"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="font-medium text-xs text-slate-600">Route 2 Mission Days</label>
+                                            <input 
+                                                type="number" 
+                                                value={secondTravelDays} 
+                                                min="1" 
+                                                onChange={e => setSecondTravelDays(Number(e.target.value))} 
+                                                className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="bg-purple-100 border border-purple-200 rounded-lg p-3">
+                                        <p className="text-purple-800 text-xs"><span className="font-semibold">💡 Note:</span> Hotel rates and DMA will be calculated separately for each destination based on their respective mission days. Airfare will include both route segments.</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <div className="space-y-2"><label htmlFor="targetAudience" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Target Audience</label><input type="text" id="targetAudience" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div>
-                        <div className="space-y-2"><label htmlFor="numberOfPeople" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Number of People</label><input type="number" id="numberOfPeople" value={numberOfPeople} min="1" onChange={e => setNumberOfPeople(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div>
+                        <div className="space-y-2"><label htmlFor="numberOfPeople" className="font-medium text-sm text-slate-700 flex items-center"><Users className="w-4 h-4 mr-2"/>Number of Travelers</label><input type="number" id="numberOfPeople" value={numberOfPeople} min="1" onChange={e => setNumberOfPeople(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5"><div className="space-y-2"><label htmlFor="targetDate" className="font-medium text-sm text-slate-700 flex items-center"><CalendarIcon className="w-4 h-4 mr-2"/>Target Date</label><input type="date" id="targetDate" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div><div className="space-y-2"><label htmlFor="travelDays" className="font-medium text-sm text-slate-700 flex items-center"><Briefcase className="w-4 h-4 mr-2"/>Expected Travel Days</label><input type="number" id="travelDays" value={travelDays} min="1" onChange={e => setTravelDays(Number(e.target.value))} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"/></div></div>
                     <div className="flex space-x-2 pt-4">
@@ -814,6 +1076,7 @@ const App = () => {
                                 <Plane className="w-5 h-5 mr-3 text-blue-500"/>
                                 Airfare (per person)
                                 {manualAirfareMode && <span className="ml-2 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">Manual</span>}
+                                {multiCityMode && <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">Multi-city</span>}
                             </span>
                             <div className="flex items-center space-x-2">
                                 {airfareLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <span className="font-bold text-lg text-slate-900">{formatCurrency(airfare)}</span>}
@@ -825,13 +1088,43 @@ const App = () => {
                             </div>
                         </div>
                         <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
-                            <span className="font-medium flex items-center"><Building2 className="w-5 h-5 mr-3 text-blue-500"/>Hotel Fare (per day)</span>
+                            <span className="font-medium flex items-center">
+                                <Building2 className="w-5 h-5 mr-3 text-blue-500"/>
+                                Hotel Fare {multiCityMode ? '(Route 1)' : '(per day)'}
+                            </span>
                             <div className="text-right">
                                 <span className="font-bold text-lg text-slate-900">{formatCurrency(hotelFare)}</span>
                                 {originalHotelInfo && originalHotelInfo.currency !== 'USD' && <div className="text-xs text-slate-500">Converted from {originalHotelInfo.rate.toLocaleString()} {originalHotelInfo.currency}</div>}
                             </div>
                         </div>
-                        <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg"><span className="font-medium flex items-center"><DollarSign className="w-5 h-5 mr-3 text-blue-500"/>DMA (per day)</span><span className="font-bold text-lg text-slate-900">{formatCurrency(dma)}</span></div>
+                        {multiCityMode && secondHotelFare !== null && (
+                            <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
+                                <span className="font-medium flex items-center">
+                                    <Building2 className="w-5 h-5 mr-3 text-purple-500"/>
+                                    Hotel Fare (Route 2)
+                                </span>
+                                <div className="text-right">
+                                    <span className="font-bold text-lg text-slate-900">{formatCurrency(secondHotelFare)}</span>
+                                    {secondOriginalHotelInfo && secondOriginalHotelInfo.currency !== 'USD' && <div className="text-xs text-slate-500">Converted from {secondOriginalHotelInfo.rate.toLocaleString()} {secondOriginalHotelInfo.currency}</div>}
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
+                            <span className="font-medium flex items-center">
+                                <DollarSign className="w-5 h-5 mr-3 text-blue-500"/>
+                                DMA {multiCityMode ? '(Route 1)' : '(per day)'}
+                            </span>
+                            <span className="font-bold text-lg text-slate-900">{formatCurrency(dma)}</span>
+                        </div>
+                        {multiCityMode && secondDma !== null && (
+                            <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg">
+                                <span className="font-medium flex items-center">
+                                    <DollarSign className="w-5 h-5 mr-3 text-purple-500"/>
+                                    DMA (Route 2)
+                                </span>
+                                <span className="font-bold text-lg text-slate-900">{formatCurrency(secondDma)}</span>
+                            </div>
+                        )}
                     </div>
                     <hr className="my-6 border-slate-200" />
                     <div className="space-y-3"><div className="flex justify-between items-center"><span className="text-slate-600">Total Cost</span><span className="font-semibold text-slate-800">{formatCurrency(totalCost)}</span></div><div className="flex justify-between items-center"><span className="text-slate-600 flex items-center"><Percent className="w-4 h-4 mr-2"/>Contingency (5%)</span><span className="font-semibold text-slate-800">{formatCurrency(contingency)}</span></div></div>
@@ -873,7 +1166,7 @@ const App = () => {
                                 <th scope="col" className="px-4 py-3">Division</th>
                                 <th scope="col" className="px-4 py-3">Departure</th>
                                 <th scope="col" className="px-4 py-3">Destination</th>
-                                <th scope="col" className="px-4 py-3">No. of People</th>
+                                <th scope="col" className="px-4 py-3">No. of Travelers</th>
                                 <th scope="col" className="px-4 py-3">Fare Class</th>
                                 <th scope="col" className="px-4 py-3">Overall Budget</th>
                                 <th scope="col" className="px-4 py-3 text-right">Actions</th>
@@ -885,11 +1178,16 @@ const App = () => {
                                     <td className="px-4 py-4">{req.submittedBy}</td>
                                     <td className="px-4 py-4">{req.division}</td>
                                     <td className="px-4 py-4">{req.departureCity}, {req.departureCountry}</td>
-                                    <td className="px-4 py-4 font-medium text-slate-900">{req.city}, {req.country}</td>
+                                    <td className="px-4 py-4 font-medium text-slate-900">
+                                        {req.multiCityMode 
+                                            ? `${req.city}, ${req.country} → ${req.secondDestinationCity}, ${req.secondDestinationCountry}` 
+                                            : `${req.city}, ${req.country}`}
+                                    </td>
                                     <td className="px-4 py-4">{req.numberOfPeople || 1}</td>
                                     <td className="px-4 py-4">
                                         {req.fareClass}
                                         {req.manualAirfareMode && <span className="ml-1 text-xs bg-orange-100 text-orange-800 px-1 py-0.5 rounded">Manual</span>}
+                                        {req.multiCityMode && <span className="ml-1 text-xs bg-purple-100 text-purple-800 px-1 py-0.5 rounded">Multi-city</span>}
                                     </td>
                                     <td className="px-4 py-4 font-semibold">{formatCurrency(req.overallBudget)}</td>
                                     <td className="px-4 py-4 text-right">
